@@ -138,6 +138,7 @@ from run_loop import (  # noqa: E402
     SPEC_PUSH_HELP,
     WAIT_FOR_HELP,
     Halted,
+    RunRecords,
     SliceLock,
     _append_wait_line,
     _exit_status,
@@ -159,6 +160,7 @@ from run_loop import (  # noqa: E402
     render_asks_document,
     resolve_skills,
     run_kc_session,
+    run_records_dir,
     skill_line,
     skills_named,
     spawn_flags,
@@ -622,16 +624,38 @@ class PlanLoop:
         self._philosophy: str | None = None
         # One plan loop per slice (`_take_plan_lock`), held for the run.
         self._plan_lock = SliceLock(self.slice_dir / "plan.lock")
+        # The slice's run records (run_loop.RunRecords), opened at the first
+        # write; and the plugin this process runs, which every row names.
+        self._records: RunRecords | None = None
+        self._plugin_version = plugin_version()
 
     # -- state ---------------------------------------------------------------
 
     def _save_state(self) -> None:
+        """plan_state.json, and its whole copy in the run records."""
         self.state["updated_at"] = _now_iso()
         tmp = self.state_path.with_suffix(".json.tmp")
         with open(tmp, "w") as f:
             json.dump(self.state, f, indent=2)
             f.write("\n")
         os.replace(tmp, self.state_path)
+        self._run_records().write("plan_state.json", self.state)
+
+    def _run_records(self) -> RunRecords:
+        """The slice's run records (run_loop.run_records_dir), opened at
+        the loop's first write, which logs where they are kept or that none
+        are; a write that fails is logged once."""
+        if self._records is None:
+            folder = run_records_dir(self.slice_dir)
+            self._records = RunRecords(
+                folder, lambda line: self.log(
+                    f"[records] {line} — the loop goes on, and no later "
+                    "failure is logged"))
+            self.log(f"[records] run records kept in {folder}" if folder
+                     else "[records] no run records kept: the installed "
+                          "plugin's data folder cannot be told (no "
+                          "installed_plugins.json key for it)")
+        return self._records
 
     def _record_exit(self, code: int) -> None:
         """The loop's exit, on disk as plan_state.json's `exit` — written
@@ -649,12 +673,22 @@ class PlanLoop:
                   file=sys.stderr)
 
     def _record(self, role: str, round_: int, outcome: str, summary: str,
-                session: str | None, duration_s: int) -> None:
+                session: str | None, duration_s: int,
+                dispatch: dict | None = None) -> None:
+        """A pass's history row, appended and saved. `ts` is when it ended;
+        `dispatch` says when it began (`started_at`), the `model` and
+        `effort` it ran on and a writer pass's `kind`; `plugin_version` is
+        this process's."""
+        dispatch = dispatch or {}
         self.state["history"].append({
             "ts": _now_iso(), "role": role, "round": round_,
             "outcome": outcome, "summary": summary, "session": session,
             "transcript": _transcript_path(self.repo_root, session),
             "duration_s": duration_s,
+            "started_at": dispatch.get("started_at"),
+            "plugin_version": self._plugin_version,
+            "model": dispatch.get("model"), "effort": dispatch.get("effort"),
+            **({"kind": dispatch["kind"]} if dispatch.get("kind") else {}),
         })
         self._save_state()
 
@@ -969,22 +1003,26 @@ class PlanLoop:
         return "\n\n" + OTHER_HOLDS_LINE.format(rows="\n".join(rows))
 
     def _spawn(self, role: str, prompt: str, verdict_path: Path,
-               round_: int) -> dict:
+               round_: int, kind: str | None = None) -> dict:
         """Run one fresh session; return its validated verdict. A session
         failure, invalid verdict (after one nudge), or dirty slice folder
         (after one nudge) is a bail-out — the loop has no fallback driver.
         The spec tree is asserted on its base first: an agent dispatched onto
         someone else's branch commits the plan there. The session over, ruled
         or bailing, the spec repo is pushed (`_push_spec`): what it committed
-        there goes out with it."""
+        there goes out with it. `kind` is a writer pass's, for its row
+        (`_writer_pass`)."""
         with run_loop.pushing_after(self._push_spec):
-            return self._spawn_session(role, prompt, verdict_path, round_)
+            return self._spawn_session(role, prompt, verdict_path, round_,
+                                       kind)
 
     def _spawn_session(self, role: str, prompt: str, verdict_path: Path,
-                       round_: int) -> dict:
+                       round_: int, kind: str | None = None) -> dict:
         """`_spawn`'s session and its ruling."""
         label = f"[{role} r{round_}]"
         model, effort = MODELS[role]
+        dispatch = {"started_at": None, "model": model, "effort": effort,
+                    "kind": kind}
 
         def _note_session(sid: str) -> None:
             self.log(f"{label} session {sid} — transcript "
@@ -996,6 +1034,7 @@ class PlanLoop:
             self._assert_current()
             self.log(f"{label} session starting")
             verdict_path.unlink(missing_ok=True)
+            dispatch["started_at"] = _now_iso()
             returncode, result = run_kc_session(
                 prompt=prompt, cwd=str(self.repo_root),
                 timeout=TIMEOUTS[role], agent=role, model=model,
@@ -1052,7 +1091,7 @@ class PlanLoop:
         outcome = verdict["outcome"]
         self.log(f"{label} → {outcome}: {verdict.get('summary', '')[:160]}")
         self._record(role, round_, outcome, verdict.get("summary", ""),
-                     session_id, duration_s)
+                     session_id, duration_s, dispatch=dispatch)
         return verdict
 
     # -- a ruling from a sibling slice (AIWF-169) ------------------------------
@@ -1178,9 +1217,16 @@ class PlanLoop:
             prompt += "\n" + WRITER_RESUME_NOTE.format(
                 questions_file=self.state["pending_questions"])
 
+        # The pass's kind, for its row: the plan's first writing, the fix
+        # pass after a review, or the pass that folds in a sibling's ruling
+        # once the review is behind the plan. A pass after the writer's own
+        # questions is the kind of the pass that asked them.
+        kind = ("first" if initial
+                else "fold" if self.state.get("fold_pass") else "review-fix")
         self.announce(f"plan-writer r{w}"
                       + ("" if initial else " (fix pass)"))
-        verdict = self._spawn("plan-writer", prompt, verdict_path, w)
+        verdict = self._spawn("plan-writer", prompt, verdict_path, w,
+                              kind=kind)
         if verdict["outcome"] == "questions":
             entries = self._handback("plan-writer", questions_path, w)
             self.state.update(pending_questions=str(questions_path),

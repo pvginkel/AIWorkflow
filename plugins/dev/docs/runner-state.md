@@ -185,9 +185,17 @@ its commits back) and one per consult: `ts`,
 `phase`, `role`, `round`, `outcome`, `summary`, `session`, `transcript`, `duration_s` (a gate,
 sweep or doc-gate row's outcome is `green`, `red` or `nothing_ran`, and so is a fixes pass's; a
 `wrap-up-gate` or `fixes-gate` row names its `repo`; any gate row that took a command from an
-earlier gate's green has `reused` as a map of each such command to that run). A wrap-up row carries
-the id lists of
-its
+earlier gate's green has `reused` as a map of each such command to that run). Every row also
+records `started_at`, when the round or the driver's own work began (`ts` is when it ended);
+`plugin_version`, the plugin the process that wrote the row runs, which a resume may make a later
+one than the state's own `plugin_version`, the run's first; `model` and `effort`, what the round
+was dispatched on, null on a row no agent produced (every gate and sweep row); a consult row its
+`site`, `review-funding`, `review-budget` or `completion`; and a code-writer row its round's
+`kind`: `first`, the phase's opening round (again on the round resumed after the writer's
+question), `gate-fix`, `review-fix`, or `ruling`, the round after the operator ruled on a question
+the writer raised in review. A wrap-up row's `kind` is `first`, or `fixes` in the fixes pass. A
+reattached round's row takes all of them from the interrupted round's `in_flight`. A row written
+before 0.10.80 has none of them. A wrap-up row carries the id lists of its
 verdict. A code-reviewer row additionally carries the verdict's `findings` list (id, severity,
 impact, category, anchor per finding — the review contract's telemetry) and a review-fix executor
 row its `refuted` list, exactly as the agent reported them. The
@@ -235,6 +243,45 @@ What a dead round left uncommitted, set aside by the resume before it resets the
 `phases/P<id>/set-aside/` (`r<N>.patch` and `r<N>-untracked/`, a test-fixer's as `fixer-r<N>.patch`,
 unredacted, so that folder ignores itself the same way; [run-loop.md](run-loop.md) § The per-phase
 round). Executor inputs come from `plan.md`, never from copies.
+
+## The run records
+
+What both loops keep of a run, as it goes, for a reader of every slice on the home at once: the
+analysis dashboard's labeller, which its collector runs over the home's `~/.claude/plugins`. They
+live in the installed plugin's data folder, Claude Code's `${CLAUDE_PLUGIN_DATA}`, for
+`dev@aiworkflow` `~/.claude/plugins/data/dev-aiworkflow/`. That variable reaches no Bash command,
+so the loops compute the folder from the installed key (`plugin_data_dir`), and a loop run from a
+checkout keeps its records in the installed plugin's folder all the same.
+Every environment shares the home, so the folder holds every project's slices:
+
+| Path | What it holds |
+|---|---|
+| `runs/<spec-repo>/<NNN_slug>/state.json` | the run loop's `state.json`, whole, at every save and at the exit record |
+| `runs/<spec-repo>/<NNN_slug>/plan_state.json` | the plan loop's `plan_state.json`, the same way |
+| `…/gates/P<id>_gate_<n>.json` | every run of the phase's gate, `n` from 1 — the first, the one after a fix round or a `clean` test-fixer, the merge's re-gate: its history row and its log's path |
+| `…/gates/P<id>_regate_<n>.json` | every re-gate of a red by its measurement, the red commands again on the same tree, the same way |
+| `…/gates/P<id>_merge-base_<n>.json` | every run of a red's `kc project` commands on the merge base: the gate-fix `round`, `base_sha`, each command's `outcomes`, `started_at`, `ts`, `duration_s`, `plugin_version` and the `log` |
+| `…/gates/<role>_<n>.json` | the `doc-gate`, `fixes-doc-gate`, `wrap-up-gate` and `fixes-gate` runs, as a phase's gate |
+| `…/sweeps/r<n>.json` | every loop-tail sweep that ran, the record `gate_sweep` holds of the last |
+| `groups/<SpecRepo>.toml` | the history's groups: the seed's copy of the prototype's `adopted/*.toml` |
+
+- **The keys.** `<spec-repo>` is the spec repo's name, the last component of its `origin`
+  remote (else the checkout's directory name), and `<NNN_slug>` the slice folder's, which stays
+  the same as the folder moves between `backlog/`, `active/` and `completed/`.
+- **Whole files.** Every file is written to a temp file beside it and renamed into place, so a
+  reader never sees half of one; a numbered record never replaces another.
+- **Bookkeeping never holds up a run.** The log says at the loop's start where the records are
+  kept, or that none are; a write that fails is one log line for the whole run, and the run goes
+  on. Nothing in a run reads them back: the slice folder's state files stay the run's own.
+- **The seed.** `seed_run_records.py [--groups DIR] [--data-dir DIR] [--dry-run] SPEC_REPO…`
+  copies the state files of every slice folder of the spec repos it is given into the same
+  places, and the groups files beside them. It never replaces a record that is there, so a second
+  run adds only what the first could not see. It runs in an environment holding the spec repos,
+  a checkout or a fresh clone, since a completed slice's state files are committed.
+- **The folder's lifetime**, tried on this home on 2026-11-15: created at its first write, kept
+  across plugin updates, and **deleted when the plugin is uninstalled** from its last scope.
+  Uninstall with `--keep-data`. The seed brings back whatever the spec repos hold, but not the
+  gate and sweep records.
 
 ## debrief.json
 
@@ -351,7 +398,8 @@ where it was (before 0.9.28 it overwrote it, and slice 209 paid a second full te
 that). Resume skips preflight entirely — the caller owns the state it resumes into.
 
 When a run dies mid-agent (host restart, quota stop, Ctrl-C), the `in_flight` record — phase,
-role, round, verdict path, session id, start time — lets `--resume` **reattach**: the worktree is
+role, round, verdict path, session id, start time, and the model, effort and kind or site its
+history row will carry — lets `--resume` **reattach**: the worktree is
 left exactly as the crash left it, and the interrupted session is resumed with a recovery prompt
 instead of a fresh dispatch — one that says the interruption came from outside and is no outcome
 of its own: Ansible 034's doc-writer, reattached after a kill, read its cut transcript as one and

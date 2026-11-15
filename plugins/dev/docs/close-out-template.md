@@ -28,6 +28,7 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
       "evidence": "read",
       "author": "code-writer, P3",
       "by": "code-writer P3",
+      "created_at": "2026-09-30T14:02:11.418203+02:00",
       "labels": {"trigger": "ordinary-condition", "impact": "degraded", "signal": "silent"},
       "notes": [{"by": "consult 1", "date": "2026-09-30", "text": ["<one string per line>"]}],
       "wrap_up": null,
@@ -58,6 +59,8 @@ an entry's words are `/dev:writing`'s; this doc is the shape.
   or `close`, what it must land before, which the document never shows.
 - **`by`** is the `--by` the entry was appended with, or `amend --by`'s; `author` is the
   provenance's own text. Neither is matched.
+- **`created_at`** is when the entry was appended, the process's wall clock, offset-aware; no
+  later change touches it, and an entry of an older store has none. No rendering shows it.
 - **`restated`** is the section the document shows for the entry, where someone gave it one
   (`restate`): `{"by", "date", "headline", "body", "consequence"?, "evidence"?, "author"?}`. It
   stands in place of the author's headline and body, and of the consequence and the provenance

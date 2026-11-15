@@ -67,6 +67,21 @@ def run_cli(*argv, stdin=None):
     return code, out.getvalue(), err.getvalue()
 
 
+@contextlib.contextmanager
+def clock(at):
+    """asks' clock stopped at `at` (`_now_iso`, the time an ask is put)."""
+    was = asks._now_iso
+    asks._now_iso = lambda: at
+    try:
+        yield
+    finally:
+        asks._now_iso = was
+
+
+T1 = "2026-11-15T09:30:00.123456+01:00"
+T2 = "2026-11-16T14:05:07.654321+01:00"
+
+
 def skill_example() -> str:
     return re.search(r"^## An example\n.*?^````markdown\n(.*?)^````$", SKILL,
                      re.S | re.M).group(1)
@@ -584,6 +599,62 @@ def test_the_cli_writes_renders_and_absorbs_a_document():
                               "## Restart the store\n"), out
         assert "check: env pilot-store running\ndone: 2026-10-30T11:00:00Z\nby: ada\n```" \
             in out, out
+
+
+def test_an_ask_is_stamped_when_put_and_keeps_the_time_through_every_rewrite():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = scratch_slice(tmp)
+        with clock(T1):
+            path = asks.create(slice_dir, "requirements", "Requirements",
+                               summary="What slice 031 builds")
+            code, out, err = run_cli("append", path, "--kind", "decision", "--headline",
+                                     "Which layout", "--body", "Two.", "--option", "Stacked",
+                                     "--option", "Tabs")
+            assert (code, out) == (0, "D1\n"), err
+            with asks.editing(path) as store:
+                asks.append(store, "question", "Who owns the copy", "Nobody is named.")
+        assert [e["put_at"] for e in asks.load(path)["entries"]] == [T1, T1]
+        with clock(T2):
+            code, _, err = run_cli("amend", path, "D1", "--recommend", "Tabs")
+            assert code == 0, err
+            code, _, err = run_cli("note", path, "Q1", "--by", "x", "--text", "A note.")
+            assert code == 0, err
+            doc = asks.render_file(path)
+            text = doc.read_text()
+            assert T1 not in text and "put_at" not in text
+            doc.write_text(with_answer(text, "D1", ["answer: Tabs", "by: ada"]))
+            asks.absorb_file(doc)
+            with asks.editing(path) as store:
+                asks.amend_frame(store, step="t3")
+        entries = asks.load(path)["entries"]
+        assert entries[0]["recommend"] == "Tabs" and entries[0]["answer_lines"]
+        assert [e["put_at"] for e in entries] == [T1, T1]
+        code, out, _ = run_cli("show", path)
+        assert code == 0 and T1 not in out and "put_at" not in out
+
+
+def test_a_store_from_before_the_put_time_validates_renders_and_stays_without_one():
+    stamped = every_kind()
+    old = json.loads(json.dumps(stamped))
+    for entry in old["entries"]:
+        del entry["put_at"]
+    assert asks.problems(old) == [] and asks.problems(stamped) == []
+    assert asks.render(old) == asks.render(stamped)
+    assert asks.show_view(old) == asks.show_view(stamped)
+    asks.amend(old, "D1", recommend="Tabs")
+    asks.note(old, "Q2", "x", "A note.", date="2026-10-30")
+    assert not any("put_at" in e for e in old["entries"])
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "1-old.json"
+        asks.save(path, old)
+        assert asks.load(path) == old
+
+
+def test_a_put_time_that_is_no_offset_aware_iso_time_is_refused():
+    entry = {"id": "Q1", "kind": "question", "headline": "H", "body": "B."}
+    assert asks.entry_problems({**entry, "put_at": T1}) == []
+    for bad in ("yesterday", "2026-11-15T09:30:00", 1731660000):
+        assert any("`put_at" in f for f in asks.entry_problems({**entry, "put_at": bad})), bad
 
 
 def test_the_cli_amends_clears_and_refuses_with_exit_2():

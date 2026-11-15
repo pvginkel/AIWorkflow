@@ -1,0 +1,268 @@
+"""Tests for seed_run_records — the old slices' state files and the history's
+groups copied into the plugin's run records.
+
+Spec repos are faked under a temp dir (`git init` and an `origin` URL, which
+`spec_repo_name` reads); the data folder is a temp dir passed as `--data-dir`.
+The installed plugin's data folder is stubbed as one that cannot be told, so
+nothing is ever written under the real home.
+
+Run: `python3 ${CLAUDE_PLUGIN_ROOT}/tools/test_seed_run_records.py` or via pytest.
+"""
+
+import contextlib
+import importlib.util
+import io
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+_spec = importlib.util.spec_from_file_location(
+    "seed_run_records", Path(__file__).resolve().parent / "seed_run_records.py"
+)
+seed = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(seed)
+run_loop = seed.run_loop
+
+# No test reaches the operator's own data folder: without --data-dir the
+# script finds none.
+run_loop.plugin_data_dir = lambda tools_dir=None: None
+
+GROUPS = b"""# hand-edited
+spec_repo = "FooSpecs"
+repo = "Foo"
+environment = "someone-foo"
+
+[[project]]
+name = "First"
+summary = "the first group"
+slices = ["001_one", "002_two"]
+"""
+
+
+def make_repo(base: Path, name: str = "FooSpecs") -> Path:
+    repo = base / "checkout"
+    (repo / "slices").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin",
+                    f"git@github.com:owner/{name}.git"], check=True)
+    return repo
+
+
+def add_slice(repo: Path, status: str, slug: str, **files) -> Path:
+    folder = repo / "slices" / status / slug
+    folder.mkdir(parents=True, exist_ok=True)
+    for fname, content in files.items():
+        text = content if isinstance(content, str) else json.dumps(content)
+        (folder / f"{fname}.json").write_text(text)
+    return folder
+
+
+def run(*argv) -> tuple[int, str]:
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        code = seed.main([str(a) for a in argv])
+    return code, out.getvalue()
+
+
+@contextlib.contextmanager
+def workspace():
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        yield base, make_repo(base), base / "data"
+
+
+def records(data: Path, slug: str, spec: str = "FooSpecs") -> Path:
+    return data / "runs" / spec / slug
+
+
+def test_copies_both_state_files_to_the_records():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "completed", "001_one",
+                  state={"phase": "done"}, plan_state={"round": 2})
+        add_slice(repo, "backlog", "002_two", plan_state={"round": 1})
+        add_slice(repo, "backlog", "003_none")      # no state files: not seen
+        src = repo / "slices/completed/001_one/state.json"
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        assert (records(data, "001_one") / "state.json").read_bytes() == src.read_bytes()
+        assert json.loads((records(data, "001_one") / "plan_state.json").read_text()) \
+            == {"round": 2}
+        assert json.loads((records(data, "002_two") / "plan_state.json").read_text()) \
+            == {"round": 1}
+        assert not (records(data, "002_two") / "state.json").exists()
+        assert not records(data, "003_none").exists()
+        assert "FooSpecs (" in out and "2 slices seen, 3 files copied, 0 kept" in out
+        # The place is the one a live run keeps them in.
+        assert run_loop.run_records_dir(repo / "slices/completed/001_one", data) \
+            == records(data, "001_one")
+        assert not list(records(data, "001_one").glob(".*.tmp"))
+
+
+def test_a_second_run_keeps_and_adds_only_the_new():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "completed", "001_one", state={"v": 1})
+        assert run("--data-dir", data, repo)[0] == 0
+        add_slice(repo, "completed", "002_two", state={"v": 2})
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        assert "2 slices seen, 1 files copied, 1 kept" in out
+        assert json.loads((records(data, "002_two") / "state.json").read_text()) == {"v": 2}
+
+
+def test_never_replaces_an_existing_record():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "completed", "001_one", state={"v": "old"})
+        live = records(data, "001_one")
+        live.mkdir(parents=True)
+        (live / "state.json").write_text('{"v": "live"}')
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        assert (live / "state.json").read_text() == '{"v": "live"}'
+        assert "0 files copied, 1 kept" in out
+
+
+def test_never_replaces_a_record_written_between_scan_and_write():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "completed", "001_one", state={"v": "old"})
+        dest = records(data, "001_one") / "state.json"
+        real_link = os.link
+
+        def driver_first(src, dst, *a, **kw):
+            if Path(dst) == dest:
+                dest.write_text('{"v": "driver"}')
+            return real_link(src, dst, *a, **kw)
+
+        os.link = driver_first
+        try:
+            code, out = run("--data-dir", data, repo)
+        finally:
+            os.link = real_link
+        assert code == 0, out
+        assert dest.read_text() == '{"v": "driver"}'
+        assert "0 files copied, 1 kept" in out
+        assert not list(dest.parent.glob(".*.tmp"))
+
+
+def test_place_new_refuses_an_existing_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "state.json"
+        assert seed.place_new(path, b"{}") is True
+        assert seed.place_new(path, b'{"x": 1}') is False
+        assert path.read_bytes() == b"{}"
+        assert sorted(p.name for p in Path(tmp).iterdir()) == ["state.json"]
+
+
+def test_bad_json_is_skipped_and_reported():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "completed", "001_one", state="{not json", plan_state={"ok": 1})
+        add_slice(repo, "completed", "002_two", state="[1, 2]")
+        code, out = run("--data-dir", data, repo)
+        assert code == 1, out
+        assert not (records(data, "001_one") / "state.json").exists()
+        assert (records(data, "001_one") / "plan_state.json").exists()
+        assert not (records(data, "002_two") / "state.json").exists()
+        assert "completed/001_one/state.json: not JSON" in out
+        assert "completed/002_two/state.json: not a JSON object" in out
+        assert "1 files copied, 0 kept (already there), 2 skipped" in out
+
+
+def test_a_slice_under_two_status_folders_copies_completed_first():
+    with workspace() as (_, repo, data):
+        add_slice(repo, "active", "001_one", state={"from": "active"})
+        add_slice(repo, "completed", "001_one", state={"from": "completed"})
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        assert json.loads((records(data, "001_one") / "state.json").read_text()) \
+            == {"from": "completed"}
+        assert "001_one is in both completed/ and active/: copied completed/'s" in out
+
+
+def test_groups_are_checked_copied_and_replaced():
+    with workspace() as (base, repo, data):
+        groups = base / "adopted"
+        groups.mkdir()
+        (groups / "FooSpecs.toml").write_bytes(GROUPS)
+        (groups / "notes.txt").write_text("not a group")
+        code, out = run("--data-dir", data, "--groups", groups, repo)
+        assert code == 0, out
+        assert (data / "groups" / "FooSpecs.toml").read_bytes() == GROUPS
+        assert not (data / "groups" / "notes.txt").exists()
+        assert "1 files, 1 copied, 0 refused" in out
+        edited = GROUPS.replace(b"the first group", b"an edited summary")
+        (groups / "FooSpecs.toml").write_bytes(edited)
+        assert run("--data-dir", data, "--groups", groups, repo)[0] == 0
+        assert (data / "groups" / "FooSpecs.toml").read_bytes() == edited
+
+
+def test_a_malformed_group_is_refused():
+    with workspace() as (base, repo, data):
+        groups = base / "adopted"
+        groups.mkdir()
+        (groups / "Good.toml").write_bytes(GROUPS)
+        (groups / "BadToml.toml").write_text("spec_repo = \n")
+        (groups / "NoSlices.toml").write_text(
+            'spec_repo = "X"\n[[project]]\nname = "a"\nsummary = "b"\nslices = "c"\n')
+        (groups / "NoRepo.toml").write_text('[[project]]\nname = "a"\n')
+        (groups / "IntSlices.toml").write_text(
+            'spec_repo = "X"\n[[project]]\nname = "a"\nsummary = "b"\nslices = [1]\n')
+        code, out = run("--data-dir", data, "--groups", groups, repo)
+        assert code == 1, out
+        assert sorted(p.name for p in (data / "groups").iterdir()) == ["Good.toml"]
+        assert "BadToml.toml: not TOML" in out
+        assert "NoSlices.toml: project 1 (a) has no `slices` list of strings" in out
+        assert "NoRepo.toml: no string `spec_repo`" in out
+        assert "IntSlices.toml: project 1 (a)" in out
+        assert "5 files, 1 copied, 4 refused" in out
+
+
+def test_dry_run_writes_nothing():
+    with workspace() as (base, repo, data):
+        add_slice(repo, "completed", "001_one", state={"v": 1}, plan_state={"r": 1})
+        groups = base / "adopted"
+        groups.mkdir()
+        (groups / "FooSpecs.toml").write_bytes(GROUPS)
+        code, out = run("--dry-run", "--data-dir", data, "--groups", groups, repo)
+        assert code == 0, out
+        assert not data.exists()
+        assert "1 slices seen, 2 files to copy, 0 kept" in out
+        assert "1 files, 1 to copy, 0 refused" in out
+        assert "would be in" in out
+
+
+def test_no_data_folder_is_exit_2_before_anything_is_read():
+    with workspace() as (_, repo, _data):
+        add_slice(repo, "completed", "001_one", state={"v": 1})
+        code, out = run(repo)
+        assert code == 2, out
+        assert "data folder cannot be told" in out
+        assert "FooSpecs" not in out
+
+
+def test_a_repo_without_slices_fails_and_the_others_go_on():
+    with workspace() as (base, repo, data):
+        add_slice(repo, "completed", "001_one", state={"v": 1})
+        bare = base / "not-a-spec-repo"
+        bare.mkdir()
+        code, out = run("--data-dir", data, bare, repo)
+        assert code == 1, out
+        assert "not a spec repo (no slices/ folder)" in out
+        assert (records(data, "001_one") / "state.json").exists()
+
+
+if __name__ == "__main__":
+    _tests = [v for k, v in sorted(globals().items())
+              if k.startswith("test_") and callable(v)]
+    failures = 0
+    for _fn in _tests:
+        try:
+            _fn()
+            print(f"ok  {_fn.__name__}")
+        except Exception as e:  # noqa: BLE001
+            failures += 1
+            print(f"FAIL {_fn.__name__}: {e}")
+    print(f"\n{len(_tests) - failures} passed, {failures} failed")
+    if failures:
+        sys.exit(1)

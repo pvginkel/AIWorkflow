@@ -30,6 +30,9 @@ plan_loop = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(plan_loop)
 PlanLoop = plan_loop.PlanLoop
 VERDICTS = plan_loop.VERDICTS
+# What `plan_loop.run_kc_session` is before any test patches it
+# (`SessionLoop._spawn` refuses to reach it).
+REAL_KC_SESSION = plan_loop.run_kc_session
 # The run loop's module, as the plan loop imported it: the seams below and
 # the guards' globals are read there.
 run_loop = plan_loop.run_loop
@@ -50,6 +53,12 @@ run_loop.INSTALLED_PLUGINS = (Path(tempfile.gettempdir()) / "planloop-no-home"
 # --plugin-dir run's (run_loop.runs_from_checkout). Stood in for an install
 # here, so the guard's tests see it bail; the test of a checkout moves it.
 run_loop.PLUGINS_HOME = run_loop.TOOLS_DIR.parent.parent
+# The run records go under the installed plugin's data folder, which is in
+# the plugin home: this checkout's `plugins/` above. Stubbed as a folder that
+# cannot be told, so no loop of the suite keeps records; the tests of the
+# records give theirs a folder in their own tmp dir.
+REAL_PLUGIN_DATA_DIR = run_loop.plugin_data_dir
+run_loop.plugin_data_dir = lambda tools_dir=None: None
 
 # Pilot's halt file is the host's (`/work/...`): a pod running the suite while
 # a halt holds would halt every loop in it. Pointed at a file that does not
@@ -138,7 +147,7 @@ class ScriptedLoop(PlanLoop):
             return "sha123"
         return ""
 
-    def _spawn(self, role, prompt, verdict_path, round_):
+    def _spawn(self, role, prompt, verdict_path, round_, kind=None):
         # The real _spawn's preamble, kept in step: the spec tree is shared,
         # and a dispatch onto someone else's branch commits the plan there.
         self._assert_on_base()
@@ -2813,10 +2822,10 @@ def test_a_plan_run_seeds_its_steps_and_takes_them_in_order():
         loop.on_start = lambda: seeded.append(progress_of(slice_dir))
         real = loop._spawn
 
-        def spawn(role, prompt, verdict_path, round_):
+        def spawn(role, prompt, verdict_path, round_, **kw):
             active.append([code for code, _, state in progress_of(slice_dir)
                            if state == "active"])
-            return real(role, prompt, verdict_path, round_)
+            return real(role, prompt, verdict_path, round_, **kw)
         loop._spawn = spawn
         assert run_to_exit(loop) == 0
         assert seeded == [[("ground", "Plan · ground", "done"),
@@ -2836,10 +2845,10 @@ def test_each_pass_carries_the_time_the_loop_started_it():
         said = []
         real = loop._spawn
 
-        def spawn(role, prompt, verdict_path, round_):
+        def spawn(role, prompt, verdict_path, round_, **kw):
             said.append(run_loop.pilot_progress.active_summary(
                 load_state(slice_dir)["progress"]))
-            return real(role, prompt, verdict_path, round_)
+            return real(role, prompt, verdict_path, round_, **kw)
         loop._spawn = spawn
         before = datetime.now().astimezone()
         assert run_to_exit(loop) == 0
@@ -3395,10 +3404,14 @@ class SessionLoop(ScriptedLoop):
     `run_kc_session`, writing its verdict — none for None — or never
     returning (NO_ANSWER)."""
 
-    def _spawn(self, role, prompt, verdict_path, round_):
+    def _spawn(self, role, prompt, verdict_path, round_, kind=None):
+        # Run outside `run_sessions`, the real _spawn would start an agent.
+        assert plan_loop.run_kc_session is not REAL_KC_SESSION, (
+            "a SessionLoop reached the real run_kc_session")
         self._pending = (role, Path(verdict_path))
         self.prompts.append((role, prompt))
-        return PlanLoop._spawn(self, role, prompt, verdict_path, round_)
+        return PlanLoop._spawn(self, role, prompt, verdict_path, round_,
+                               kind=kind)
 
     def session(self, prompt, cwd, timeout, agent=None, **kw):
         role, verdict_path = self._pending
@@ -3482,6 +3495,137 @@ def test_a_pass_that_handed_back_no_debrief_or_no_verdict_has_neither():
                 "The plan", "Plan writer", False)
             if want is not None:
                 assert entry["duration"] == want
+
+
+
+# -- the run records (AIWF-183, AIWF-185) ----------------------------------------
+#
+# The loop keeps plan_state.json whole in the installed plugin's data folder,
+# as the run loop keeps state.json, and every history row says when its pass
+# began, what it ran on and, for a writer pass, which kind of pass it was.
+
+def records_in(tmp):
+    """(the data folder, the patch pointing the run records at it)."""
+    data = Path(tmp) / "plugin-data"
+    return data, patched(run_loop,
+                         plugin_data_dir=lambda tools_dir=None: data)
+
+
+def spec_slice(tmp):
+    """make_slice in a spec repo's `slices/` tree, where the records find
+    its spec repo."""
+    return make_slice(Path(tmp) / "Specs" / "slices")
+
+
+def iso(stamp):
+    return datetime.fromisoformat(stamp)
+
+
+def test_the_run_records_hold_the_plan_state_whole_at_every_save():
+    with tempfile.TemporaryDirectory() as tmp:
+        data, patch = records_in(tmp)
+        slice_dir = spec_slice(tmp)
+        folder = run_loop.run_records_dir(slice_dir, data_dir=data)
+        assert folder == data / "runs" / "Specs" / slice_dir.name
+        seen = []
+
+        def compares(loop):
+            seen.append(json.loads((folder / "plan_state.json").read_text())
+                        == load_state(slice_dir))
+
+        def writes_and_compares(loop):
+            write_phases(loop)
+            compares(loop)
+
+        with patch:
+            loop = ScriptedLoop(slice_dir, [(*W_DONE[:2], writes_and_compares),
+                                            (*R_GO, compares)])
+            assert run_to_exit(loop) == 0
+        assert seen == [True, True]
+        mirror = json.loads((folder / "plan_state.json").read_text())
+        assert mirror == load_state(slice_dir)
+        assert mirror["exit"]["code"] == 0
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert log.count("[records] run records kept in") == 1
+        assert f"[records] run records kept in {folder}\n" in log
+
+
+def test_a_plan_run_with_no_data_folder_keeps_no_records_and_says_so_once():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = spec_slice(tmp)
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        log = (slice_dir / "plan_log.txt").read_text()
+        assert log.count("[records] no run records kept: the installed "
+                         "plugin's data folder cannot be told") == 1
+
+
+def test_plan_records_that_cannot_be_written_never_stop_the_loop():
+    with tempfile.TemporaryDirectory() as tmp:
+        data, patch = records_in(tmp)
+        data.write_text("a file where the folder would be\n")
+        slice_dir = spec_slice(tmp)
+        with patch:
+            assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        assert load_state(slice_dir)["exit"]["code"] == 0
+        log = (slice_dir / "plan_log.txt").read_text()
+        failed = [line for line in log.splitlines()
+                  if "not written to the run records" in line]
+        assert len(failed) == 1, failed
+        assert "[records] plan_state.json not written" in failed[0]
+
+
+def kinds(slice_dir):
+    return [(h["role"], h["round"], h.get("kind"))
+            for h in load_state(slice_dir)["history"]]
+
+
+def test_every_plan_row_says_when_its_pass_began_what_ran_it_and_its_kind():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert run_sessions(SessionLoop(slice_dir, [W_DONE, R_ISSUES])) == 4
+        # a state from an older plugin: its first plugin and its old rows
+        # stay as they are
+        state = load_state(slice_dir)
+        assert kinds(slice_dir) == [("plan-writer", 1, "first"),
+                                    ("plan-reviewer", 1, None)]
+        old = {k: state["history"][0][k] for k in (
+            "ts", "role", "round", "outcome", "summary", "session",
+            "transcript", "duration_s")}
+        state.update(plugin_version="0.0.1", history=[old,
+                                                       state["history"][1]])
+        (slice_dir / "plan_state.json").write_text(json.dumps(state))
+        assert run_sessions(SessionLoop(slice_dir, [W_DONE])) == 0
+        state = load_state(slice_dir)
+        assert state["plugin_version"] == "0.0.1"
+        assert state["history"][0] == old
+        assert kinds(slice_dir)[1:] == [("plan-reviewer", 1, None),
+                                        ("plan-writer", 2, "review-fix")]
+        for row in state["history"][1:]:
+            assert (row["model"], row["effort"]) == \
+                plan_loop.MODELS[row["role"]]
+            assert row["plugin_version"] == OURS
+            assert iso(row["started_at"]) <= iso(row["ts"])
+
+
+def test_a_fold_pass_and_a_pass_after_questions_are_their_kinds():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        seen = []
+        assert run_sessions(SessionLoop(slice_dir, [
+            W_DONE, (*R_GO, sends(INCOMING)), took(seen)])) == 0
+        assert kinds(slice_dir) == [("plan-writer", 1, "first"),
+                                    ("plan-reviewer", 1, None),
+                                    ("plan-writer", 2, "fold")]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_sessions(SessionLoop(slice_dir, [W_Q])) == 4
+        # the pass after the writer's own questions is the pass that asked
+        assert run_sessions(SessionLoop(slice_dir, [W_DONE, R_GO])) == 0
+        assert kinds(slice_dir) == [("plan-writer", 1, "first"),
+                                    ("plan-writer", 2, "first"),
+                                    ("plan-reviewer", 1, None)]
 
 
 if __name__ == "__main__":

@@ -802,13 +802,14 @@ TOOLS_DIR = Path(__file__).resolve().parent
 PLUGINS_HOME = Path.home() / ".claude" / "plugins"
 
 
-def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
-    """(version, installPath) of this plugin as installed_plugins.json has it,
-    or None when that cannot be told. The entry is `<name>@<marketplace>`:
-    the marketplace is read off the cache layout this file runs from
-    (`.../plugins/cache/<marketplace>/<name>/<version>/tools/`), else the
-    file's sole `<name>@*` key is taken; several or none is None. Within the
-    entry the user-scope install wins, else a lone one."""
+def _installed_key(tools_dir: Path | None = None) -> tuple[str, dict] | None:
+    """(the key this plugin is installed under in installed_plugins.json,
+    the file's `plugins` table), or None when that cannot be told. The key
+    is `<name>@<marketplace>`: the marketplace is read off the cache layout
+    this file runs from (`.../plugins/cache/<marketplace>/<name>/<version>/
+    tools/`), else the file's sole `<name>@*` key is taken; several or none
+    is None. A loop run from a checkout gets the installed key all the same
+    — the plugin every agent it dispatches loads."""
     manifest = _read_json(PLUGIN_MANIFEST)
     name = manifest.get("name") if isinstance(manifest, dict) else None
     data = _read_json(INSTALLED_PLUGINS)
@@ -818,18 +819,170 @@ def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
     parts = (tools_dir or TOOLS_DIR).parts
     if (len(parts) >= 6 and parts[-1] == "tools" and parts[-3] == name
             and parts[-5] == "cache" and parts[-6] == "plugins"):
-        key = f"{name}@{parts[-4]}"
-    else:
-        keys = [k for k in plugins if k.split("@", 1)[0] == name]
-        if len(keys) != 1:
-            return None
-        key = keys[0]
+        return f"{name}@{parts[-4]}", plugins
+    keys = [k for k in plugins if k.split("@", 1)[0] == name]
+    return (keys[0], plugins) if len(keys) == 1 else None
+
+
+def installed_plugin(tools_dir: Path | None = None) -> tuple[str, str] | None:
+    """(version, installPath) of this plugin as installed_plugins.json has it,
+    or None when that cannot be told: the entry under its key
+    (`_installed_key`), within which the user-scope install wins, else a
+    lone one."""
+    found = _installed_key(tools_dir)
+    if found is None:
+        return None
+    key, plugins = found
     entry = _install_entry(plugins.get(key))
     version = entry.get("version") if entry else None
     if not isinstance(version, str) or not version:
         return None
     path = entry.get("installPath")
     return version, path if isinstance(path, str) else ""
+
+
+# What Claude Code turns an installed plugin's key into for the name of its
+# data folder — its `${CLAUDE_PLUGIN_DATA}`, `data/<id>` under its plugin
+# home: every character but a letter, a digit, `_` or `-` becomes `-`
+# (`dev@aiworkflow` → `dev-aiworkflow`). The folder survives plugin updates
+# and goes with the plugin's uninstall.
+PLUGIN_DATA_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def plugin_data_id(key: str) -> str:
+    """The data folder's name for installed_plugins.json key `key`."""
+    return PLUGIN_DATA_ID_RE.sub("-", key)
+
+
+def plugin_data_dir(tools_dir: Path | None = None) -> Path | None:
+    """The installed plugin's data folder, `PLUGINS_HOME/data/<id>` — or None
+    when its key cannot be told (`_installed_key`). Computed, never read
+    from `CLAUDE_PLUGIN_DATA`: the variable reaches no Bash command, so
+    no loop sees it, and a `--plugin-dir` session's value names another
+    folder (`<name>-inline`). The installed
+    key's folder is the one place, whichever copy of the plugin runs."""
+    found = _installed_key(tools_dir)
+    return PLUGINS_HOME / "data" / plugin_data_id(found[0]) if found else None
+
+
+def spec_repo_name(spec_root: Path) -> str:
+    """A spec repo's name in the run records: the last component of its
+    `origin` remote's URL less `.git` (`git@github.com:o/PilotAppSpecs.git`
+    → `PilotAppSpecs`), else the root's directory name."""
+    try:
+        url = _git_in(Path(spec_root), "remote", "get-url", "origin")
+    except ValueError:
+        url = ""
+    name = re.split(r"[/:]", url.rstrip("/"))[-1].removesuffix(".git")
+    return name or Path(spec_root).name
+
+
+def run_records_dir(slice_dir: Path,
+                    data_dir: Path | None = None) -> Path | None:
+    """Where a slice's run records are kept: `<data>/runs/<spec-repo>/
+    <slice-folder>/` — the plugin's data folder (`plugin_data_dir`, unless
+    `data_dir` is given), the spec repo's name (`spec_repo_name`) and the
+    slice folder's own (`NNN_slug`, the same as it moves from `backlog/` to
+    `active/` to `completed/`). The home is shared by every environment, so
+    every slice of every project keeps its records under the one folder. The
+    spec root is the parent of the `slices/` tree the slice sits in, else
+    the slice folder's git toplevel. None when the data folder or the spec
+    root cannot be told; never raises. Needs no running loop: a seed script
+    gets the folder a run would."""
+    try:
+        data = data_dir or plugin_data_dir()
+        if data is None:
+            return None
+        slice_dir = Path(slice_dir).resolve()
+        root = spec_root_for(slice_dir)
+        if root is None:
+            try:
+                root = Path(_git_in(slice_dir, "rev-parse", "--show-toplevel"))
+            except ValueError:
+                return None
+        return Path(data) / "runs" / spec_repo_name(root) / slice_dir.name
+    except Exception:
+        return None
+
+
+def add_numbered_json(directory: Path, stem: str, data: dict) -> Path:
+    """`data` as `<directory>/<stem>_<n>.json`, `n` the next number after the
+    highest there (1 for the first), and the path it went to. Written whole
+    to a temp file, then linked into place, which never replaces a file: two
+    writers racing for a number each get one of their own. Where the
+    filesystem has no hard links, renamed in where the name is free."""
+    taken = re.compile(rf"^{re.escape(stem)}_(\d+)\.json$")
+    numbers = [int(m.group(1)) for p in directory.iterdir()
+               if (m := taken.match(p.name))]
+    n = max(numbers, default=0) + 1
+    fd, tmp = tempfile.mkstemp(dir=str(directory), prefix=f".{stem}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        while True:
+            path = directory / f"{stem}_{n}.json"
+            try:
+                os.link(tmp, path)
+                return path
+            except FileExistsError:
+                n += 1
+            except OSError:
+                if path.exists():
+                    n += 1
+                    continue
+                os.replace(tmp, path)
+                return path
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+
+
+class RunRecords:
+    """A slice's run records, in the folder `run_records_dir` names: what a
+    loop keeps of the run as it goes, for a reader of every slice of the
+    home's at once. Bookkeeping never holds up a run:
+    no folder is no records at all, and a write that fails is reported once
+    through `report` — one line for the whole run, not one per write — and
+    the next write tried as if nothing had happened."""
+
+    def __init__(self, folder: Path | None, report):
+        self.folder = folder
+        self._report = report
+        self._failed = False
+
+    def _failure(self, what: str, e: Exception) -> None:
+        if self._failed:
+            return
+        self._failed = True
+        with contextlib.suppress(Exception):
+            self._report(f"{what} not written to the run records in "
+                         f"{self.folder} ({type(e).__name__}: {e})")
+
+    def write(self, name: str, data: dict) -> None:
+        """`data` whole as `<folder>/<name>`, over what is there."""
+        if self.folder is None:
+            return
+        try:
+            path = self.folder / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(path, data)
+        except Exception as e:
+            self._failure(name, e)
+
+    def add(self, subdir: str, stem: str, data: dict) -> Path | None:
+        """`data` as `<folder>/<subdir>/<stem>_<n>.json`, the next number
+        (`add_numbered_json`): never over an earlier record."""
+        if self.folder is None:
+            return None
+        try:
+            directory = self.folder / subdir
+            directory.mkdir(parents=True, exist_ok=True)
+            return add_numbered_json(directory, stem, data)
+        except Exception as e:
+            self._failure(f"{subdir}/{stem}_<n>.json", e)
+            return None
 
 
 def _install_entry(entries) -> dict | None:
@@ -5364,6 +5517,10 @@ class RunLoop:
         # phase id → the merge base `_merge_base` last answered for it, so a
         # move between two reads is logged; this run's alone, never state.
         self._merge_bases: dict[str, str] = {}
+        # The slice's run records (`RunRecords`), opened at the first write;
+        # and the plugin this process runs, which every history row names.
+        self._records: RunRecords | None = None
+        self._plugin_version = plugin_version()
 
     def reroot(self, root: Path) -> None:
         """Point the loop at another code repo — the dry run's, started from
@@ -5455,8 +5612,36 @@ class RunLoop:
     # -- state ---------------------------------------------------------------
 
     def _save_state(self) -> None:
+        """state.json, and its whole copy in the run records."""
         self.state["updated_at"] = _now_iso()
         _write_state(self.state_path, self.state)
+        self._run_records().write("state.json", self.state)
+
+    def _run_records(self) -> RunRecords:
+        """The slice's run records (`run_records_dir`), opened at the run's
+        first write, which logs where they are kept or that none are; a
+        write that fails is logged once (`RunRecords`)."""
+        if self._records is None:
+            folder = run_records_dir(self.slice_dir)
+            self._records = RunRecords(
+                folder, lambda line: self.log(
+                    f"[records] {line} — the run goes on, and no later "
+                    "failure is logged"))
+            self.log(f"[records] run records kept in {folder}" if folder
+                     else "[records] no run records kept: the installed "
+                          "plugin's data folder cannot be told (no "
+                          "installed_plugins.json key for it)")
+        return self._records
+
+    def _keep_gate(self, stem: str, row: dict, log_path) -> None:
+        """A gate the driver ran, in the run records: its history row — or,
+        for the merge base's run, which has none, the measurement's record
+        of it — with the log it wrote, as `gates/<stem>_<n>.json`
+        (`RunRecords.add`). `stem` says what ran it: `P<id>_gate` for a
+        phase's gate, `P<id>_regate` for the measurement's re-gate of a red,
+        `P<id>_merge-base` for its run on the merge base, else the row's
+        role."""
+        self._run_records().add("gates", stem, {**row, "log": str(log_path)})
 
     def _record_exit(self, code: int, extra: dict | None = None) -> None:
         """The run's exit code, on disk — written last, after bailout.json,
@@ -5481,6 +5666,8 @@ class RunLoop:
         except OSError as e:
             print(f"warning: the exit record was not written: {e}",
                   file=sys.stderr)
+            return
+        self._run_records().write("state.json", state)
 
     def _phase_state(self, phase_id: str) -> dict:
         defaults = {
@@ -5501,14 +5688,47 @@ class RunLoop:
     def _record(self, phase: str | None, role: str, round_: int,
                 outcome: str, summary: str, session: str | None,
                 duration_s: int, transcript: str | None = None,
-                extra: dict | None = None) -> None:
-        self.state["history"].append({
+                extra: dict | None = None, started_at: str | None = None,
+                dispatch: dict | None = None) -> dict:
+        """A history row, appended and saved, and returned. `ts` is when it
+        ended; `started_at` when the round or the driver's own work began —
+        a dispatched round's from its `dispatch` (`_round_facts`), which
+        also gives the `model` and `effort` it ran on and, where it has
+        one, its `kind` or its consult's `site`. A row no agent produced
+        has a null model and effort. `plugin_version` is this process's."""
+        dispatch = dispatch or {}
+        row = {
             "ts": _now_iso(), "phase": phase, "role": role, "round": round_,
             "outcome": outcome, "summary": summary, "session": session,
             "transcript": transcript, "duration_s": duration_s,
+            "started_at": started_at or dispatch.get("started_at"),
+            "plugin_version": self._plugin_version,
+            "model": dispatch.get("model"), "effort": dispatch.get("effort"),
+            **{key: dispatch[key] for key in ("site", "kind")
+               if dispatch.get(key)},
             **(extra or {}),
-        })
+        }
+        self.state["history"].append(row)
         self._save_state()
+        return row
+
+    @staticmethod
+    def _round_facts(role: str, kind: str | None = None,
+                     site: str | None = None,
+                     record: dict | None = None) -> dict:
+        """What a dispatched round's history row and in-flight record say of
+        its dispatch: `started_at` (None until its first session starts),
+        the `model` and `effort` MODELS gives the role, and its `kind` or
+        `site` where it has one. A reattached round's `record` — the
+        in-flight record the interrupted round left — wins for every one it
+        holds: the round began, and was dispatched, there."""
+        model, effort = MODELS[role]
+        facts = {"started_at": None, "model": model, "effort": effort}
+        facts.update({k: v for k, v in (("kind", kind), ("site", site)) if v})
+        for key in ("started_at", "model", "effort", "kind", "site"):
+            if (record or {}).get(key) is not None:
+                facts[key] = record[key]
+        return facts
 
     def _debrief(self, role: str, phase: str | None, round_: int,
                  duration_s: int, verdict=None,
@@ -7072,10 +7292,13 @@ class RunLoop:
     def _spawn(self, role: str, prompt: str, cwd: Path, verdict_path: Path,
                phase_id: str | None, round_: int,
                agent: str | None = None,
-               display: str | None = None) -> tuple[dict, str | None]:
+               display: str | None = None, kind: str | None = None,
+               site: str | None = None) -> tuple[dict, str | None]:
         """Run one round; return (verdict, session_id). `_dispatch_rounds`
         does the running — this is the ruling on what came back, and the
-        round's one history row.
+        round's one history row. `kind` is a code-writer round's kind
+        (`spawn_executor`), `site` a consult's; both ride the row
+        (`_round_facts`).
 
         A round interrupted after it wrote its verdict is never re-run: the
         file on disk is that round's (every dispatch unlinks it first), so
@@ -7091,26 +7314,34 @@ class RunLoop:
             self._report_bailouts()
             shown = display or role
             label = f"[P{phase_id}] [{shown}]" if phase_id else f"[{shown}]"
+            record = self._pending_reattach(role, phase_id)
             salvaged = self._salvage_reattach(role, phase_id, verdict_path,
                                               label)
             if salvaged is not None:
                 verdict, session_id = salvaged
                 returncode, duration_s, nudged, recoveries = 0, 0, False, 0
+                facts = self._round_facts(role, kind, site, record)
             else:
                 (returncode, verdict, session_id, duration_s, nudged,
-                 recoveries) = self._dispatch_rounds(
+                 recoveries, facts) = self._dispatch_rounds(
                     role, prompt, cwd, verdict_path, phase_id, round_, agent,
-                    shown, label)
+                    shown, label, kind=kind, site=site)
             return self._rule_on_round(
                 role, verdict, verdict_path, cwd, phase_id, round_, label,
-                returncode, session_id, duration_s, nudged, recoveries)
+                returncode, session_id, duration_s, nudged, recoveries,
+                facts)
 
     def _dispatch_rounds(self, role: str, prompt: str, cwd: Path,
                          verdict_path: Path, phase_id: str | None,
                          round_: int, agent: str | None, shown: str,
-                         label: str) -> tuple:
+                         label: str, kind: str | None = None,
+                         site: str | None = None) -> tuple:
         """Drive one round to something to rule on; return (returncode,
-        verdict, session_id, duration_s, nudged, recoveries).
+        verdict, session_id, duration_s, nudged, recoveries, facts) — facts
+        being what its history row says of the dispatch (`_round_facts`),
+        kept on the in-flight record: when the round began — its first
+        session's start, through a recovery resume, and the interrupted
+        round's for a reattach — and what it ran on.
 
         Every spawn is a fresh session — the only resumed sessions are crash
         reattaches and protocol nudges. Model and effort come from the MODELS
@@ -7120,8 +7351,11 @@ class RunLoop:
         Then it commits the store when the driver's entries, or anything
         else, left it changed (`_commit_own_entries`), so the role's own
         commit of the store holds only its entries."""
+        record = self._pending_reattach(role, phase_id)
         prompt, resume_session = self._resolve_reattach(
             role, phase_id, prompt, verdict_path, label)
+        facts = self._round_facts(role, kind, site,
+                                  record if resume_session else None)
         model, effort = MODELS[role]
 
         def _valid(v: dict | None) -> bool:
@@ -7140,10 +7374,11 @@ class RunLoop:
         carried_s = 0        # the round's seconds before a recovery resume
         while True:
             verdict_path.unlink(missing_ok=True)
+            facts["started_at"] = facts["started_at"] or _now_iso()
             self.state["in_flight"] = {
                 "phase": phase_id, "role": role, "round": round_,
                 "verdict_path": str(verdict_path), "session": resume_session,
-                "started_at": _now_iso(),
+                **facts,
             }
             self._save_state()
             # Pilot's halt stops the round before its session, with the
@@ -7213,7 +7448,10 @@ class RunLoop:
                 self._record(phase_id, role, round_, "session_limit",
                              notice.replace("\n", " ")[:200], session_id,
                              duration_s,
-                             transcript=_transcript_path(cwd, session_id))
+                             transcript=_transcript_path(cwd, session_id),
+                             dispatch=facts)
+                # the redispatch is a row of its own, begun when it starts
+                facts = dict(facts, started_at=None)
                 self._wait_out_session_limit(notice, label)
                 continue
             if _valid(verdict) or not session_id:
@@ -7254,14 +7492,16 @@ class RunLoop:
 
         # The round's duration covers its recovery resumes too.
         return (returncode, verdict, session_id, duration_s + carried_s,
-                nudged, recoveries)
+                nudged, recoveries, facts)
 
     def _rule_on_round(self, role: str, verdict: dict | None,
                        verdict_path: Path, cwd: Path, phase_id: str | None,
                        round_: int, label: str, returncode: int,
                        session_id: str | None, duration_s: int,
-                       nudged: bool, recoveries: int) -> tuple[dict, str | None]:
-        """The round's outcome and its one history row.
+                       nudged: bool, recoveries: int,
+                       facts: dict | None = None) -> tuple[dict, str | None]:
+        """The round's outcome and its one history row, which carries
+        `facts`, what it was dispatched with (`_round_facts`).
 
         Only an invalid verdict is a protocol failure. A session killed after
         it wrote a valid one (rc != 0 — a SIGTERM'd worker, a send the
@@ -7293,7 +7533,7 @@ class RunLoop:
         self._record(phase_id, role, round_, outcome,
                      verdict.get("summary", ""), session_id, duration_s,
                      transcript=_transcript_path(cwd, session_id),
-                     extra=telemetry)
+                     extra=telemetry, dispatch=facts)
         self._debrief(role, phase_id, round_, duration_s, given)
         if verdict.get("cards"):
             # A pre-0.5.0 register still on an installed clone: not a
@@ -7437,7 +7677,7 @@ class RunLoop:
         )
         verdict, _ = self._spawn(
             "consult", prompt, self.repo_root, verdict_path, phase_id, n,
-            display=f"consult: {site}",
+            display=f"consult: {site}", site=site,
         )
         if verdict.get("outcome") not in actions:
             raise Bailout(
@@ -7606,6 +7846,7 @@ class RunLoop:
         n = ps["gate_runs"]
         ps["gate_projects"] = None
         self._save_state()
+        started = _now_iso()
         log_path = outputs / f"gate_r{n}.log"
         touched = (self._touched_components(phase_id, target, merge_base)
                    if self._gates_touched(target) else None)
@@ -7712,8 +7953,10 @@ class RunLoop:
         extra = {"projects": projects}
         if reused:
             extra["reused"] = reused
-        self._record(phase_id, "gate", n, outcome, tail, None, duration_s,
-                     extra=extra)
+        row = self._record(phase_id, "gate", n, outcome, tail, None,
+                           duration_s, extra=extra, started_at=started)
+        self._keep_gate(f"P{phase_id}_{'regate' if rerun else 'gate'}", row,
+                        log_path)
         self.log(f"[P{phase_id}] gate #{n} → "
                  f"{GATE_OUTCOME_LABELS[outcome]} ({duration_s}s, "
                  f"{ran_text}) {tail[:120]}")
@@ -9162,9 +9405,12 @@ class RunLoop:
         def executor_verdict_path(r: int) -> Path:
             return outputs / f"executor_result_r{r}.json"
 
-        def spawn_executor(build_prompt) -> dict:
+        def spawn_executor(build_prompt, kind: str) -> dict:
             """build_prompt(verdict_path) → prompt, to which the phase digest
-            is appended. Every round is a fresh session — fix rounds read
+            is appended; `kind` is the round's on its history row — `first`
+            (the phase's opening prompt), `gate-fix`, `review-fix`, or
+            `ruling` (the writer round after the operator ruled on its
+            question in review). Every round is a fresh session — fix rounds read
             their inputs from the digest, the plan and the durable outputs
             dir, never from the prior round's context. A round a crash
             interrupted keeps its number: the in-flight record banked it.
@@ -9191,7 +9437,7 @@ class RunLoop:
             verdict, session = self._spawn(
                 "code-writer", prompt,
                 self.repo_root, executor_verdict_path(r),
-                phase_id, r, agent="code-writer",
+                phase_id, r, agent="code-writer", kind=kind,
             )
             if ps.pop("set_aside", None) is not None:
                 self._save_state()
@@ -9216,7 +9462,7 @@ class RunLoop:
                 slice_name=self.slice_name, target=phase.target,
                 branch=branch, where=where, gate_hint=gate_hint,
                 verdict_path=vp,
-                pointers=self._pointers(target, phase_id)))
+                pointers=self._pointers(target, phase_id)), "first")
             self._after_session_plan_check()
             ps["stage"] = "gate"
             self._save_state()
@@ -9253,7 +9499,8 @@ class RunLoop:
                         merge_base=merge_base, where=where,
                         review_path=outputs / f"code_review_r{_r}.md",
                         gate_hint=gate_hint, verdict_path=vp,
-                        pointers=self._pointers(target, phase_id)))
+                        pointers=self._pointers(target, phase_id)),
+                    "ruling")
                 self._after_session_plan_check()
                 self._handle_refutations(outputs, phase_id, r, fix_verdict)
                 self._gate_until_green(phase, ps, outputs, target, base,
@@ -9846,7 +10093,8 @@ class RunLoop:
                                gate_log=_log, merge_base=_mb,
                                where=where, measurement=_m, fixer=_f,
                                gate_hint=_hint, verdict_path=vp,
-                               pointers=self._pointers(target, phase.id)))
+                               pointers=self._pointers(target, phase.id)),
+                           "gate-fix")
             self._after_session_plan_check()
 
     # -- a red phase gate: the measurement, then the test-fixer ---------------
@@ -9887,7 +10135,8 @@ class RunLoop:
         command's outcome), `base_sha`, `logs`, whether the red is `older`
         than the phase, and its `text`, the sentences the fixer and the
         executor round read (`measurement_text`) — a round measured again
-        replacing its record.
+        replacing its record. The base run is kept in the run records with
+        its log, its outcomes and when it ran (`_keep_gate`).
 
         Older is the re-gate green and every red command red on the base
         too. A re-gate green where the base was green is still the phase's
@@ -9904,8 +10153,16 @@ class RunLoop:
                                               merge_base, rerun=rerun)
         regate = self._cmd_outcomes(ps, red, passed)
         base_log = outputs / f"measure_r{r}_base.log"
+        started, t0 = _now_iso(), time.monotonic()
         base = self._base_run(phase_id, target, merge_base, branch, red,
                               base_log)
+        if base:
+            self._keep_gate(f"P{phase_id}_merge-base", {
+                "ts": _now_iso(), "phase": phase_id, "round": r,
+                "started_at": started,
+                "duration_s": int(time.monotonic() - t0),
+                "plugin_version": self._plugin_version,
+                "base_sha": merge_base, "outcomes": base}, base_log)
         logs = {"gate": str(gate_log) if gate_log else None,
                 "regate": str(regate_log) if regate_log else None,
                 "base": str(base_log) if base else None}
@@ -10356,7 +10613,8 @@ class RunLoop:
                     merge_base=_mb, where=where,
                     review_path=outputs / f"code_review_r{_r}.md",
                     gate_hint=_hint, verdict_path=vp,
-                    pointers=self._pointers(target, phase_id)))
+                    pointers=self._pointers(target, phase_id)),
+                "review-fix")
             self._after_session_plan_check()
             refuted = self._handle_refutations(outputs, phase_id, r,
                                                fix_verdict)
@@ -10608,8 +10866,11 @@ class RunLoop:
                    for row in sweep.get("results", []))
 
     def _run_gate_sweep(self, targets: list[Path], heads: dict) -> dict:
+        """The sweep, run: its record set as `gate_sweep`, and kept whole in
+        the run records as `sweeps/r<run>.json`."""
         n = self.state["sweep_runs"] = self.state.get("sweep_runs", 0) + 1
         self._save_state()
+        started = _now_iso()
         self._progress_start("sweep", n,
                              "Gate sweep" + (f" {n}" if n >= 2 else ""),
                              track="check", why=self._resweep_why(heads))
@@ -10661,6 +10922,8 @@ class RunLoop:
             "green": outcome == "green", "ran_at": _now_iso(),
             "results": results,
         }
+        self._run_records().write(f"sweeps/r{n}.json",
+                                  self.state["gate_sweep"])
         reds = [self._red_name(r)
                 for r, o in zip(results, outcomes, strict=True) if o == "red"]
         empty = outcomes.count("nothing_ran")
@@ -10678,7 +10941,8 @@ class RunLoop:
         if reused:
             summary += f" ({len(reused)} reused from an earlier run)"
         self._record(None, "sweep", n, outcome, summary, None, duration_s,
-                     extra={"reused": reused} if reused else None)
+                     extra={"reused": reused} if reused else None,
+                     started_at=started)
         self._debrief("sweep", None, n, duration_s,
                       passed={"green": True, "red": False}.get(outcome))
         self._progress_done()
@@ -12355,6 +12619,7 @@ class RunLoop:
         ds["gate_runs"] += 1
         n = ds["gate_runs"]
         self._save_state()
+        started = _now_iso()
         log_path = self.slice_dir / f"{stem}_r{n}.log"
         tree = self._tree_now(self.repo_root)
         reused: dict[str, str] = {}
@@ -12402,8 +12667,10 @@ class RunLoop:
         except OSError:
             pass
         self._note_greens(self.repo_root, tree, ran, f"{role} r{n}")
-        self._record(None, role, n, outcome, tail, None, duration_s,
-                     extra={"reused": reused} if reused else None)
+        row = self._record(None, role, n, outcome, tail, None, duration_s,
+                           extra={"reused": reused} if reused else None,
+                           started_at=started)
+        self._keep_gate(role, row, log_path)
         empty = [verb for verb, o in outcomes.items() if o == "nothing_ran"]
         unrunnable = [verb for verb, o in outcomes.items()
                       if o == "unrunnable"]
@@ -12981,7 +13248,7 @@ class RunLoop:
 
     def _dispatch_wrap_up(self, prompt: str, verdict_path: Path,
                           wu: dict, label: str = "[wrap-up]",
-                          round_: int = 1) -> str | None:
+                          round_: int = 1, kind: str = "first") -> str | None:
         """The wrap-up's session, through a path of its own: `_spawn` ends
         in `_rule_on_round`, whose protocol failure bails the run, and the
         wrap-up's may not. Kept from the ordinary dispatch: the session
@@ -12996,17 +13263,20 @@ class RunLoop:
         landing may go on from, else the soft failure's reason. The session
         over, whatever its outcome, the spec repo is pushed (`_push_spec`):
         the wrap-up commits the store there on its base. The fixes pass's
-        dispatch is the same session under its own `label` and `round_`."""
+        dispatch is the same session under its own `label` and `round_`, and
+        its rows' `kind` is `fixes` where the first wrap-up's is `first`."""
         with pushing_after(self._push_spec):
             return self._dispatch_wrap_up_session(prompt, verdict_path, wu,
-                                                  label, round_)
+                                                  label, round_, kind)
 
     def _dispatch_wrap_up_session(self, prompt: str, verdict_path: Path,
                                   wu: dict, label: str = "[wrap-up]",
-                                  round_: int = 1) -> str | None:
+                                  round_: int = 1,
+                                  kind: str = "first") -> str | None:
         """`_dispatch_wrap_up`'s session and its ruling."""
         role, cwd = "wrap-up", self.repo_root
         model, effort = MODELS[role]
+        facts = self._round_facts(role, kind)
 
         def _note_session(sid: str) -> None:
             self.log(f"{label} session {sid} — transcript "
@@ -13024,10 +13294,11 @@ class RunLoop:
             self.log(f"{label} session starting")
             self.announce(label.strip("[]"))
             verdict_path.unlink(missing_ok=True)
+            facts["started_at"] = _now_iso()
             self.state["in_flight"] = {
                 "phase": None, "role": role, "round": round_,
                 "verdict_path": str(verdict_path), "session": None,
-                "started_at": _now_iso(),
+                **facts,
             }
             self._save_state()
             t0 = time.monotonic()
@@ -13048,7 +13319,8 @@ class RunLoop:
                 why = f"the session timed out after {TIMEOUTS[role]}s"
                 self._record(None, role, round_, "timeout", why, sid,
                              TIMEOUTS[role],
-                             transcript=_transcript_path(cwd, sid))
+                             transcript=_transcript_path(cwd, sid),
+                             dispatch=facts)
                 self._debrief(role, None, round_, TIMEOUTS[role])
                 self.log(f"{label} → timeout: {why}")
                 return why
@@ -13067,7 +13339,8 @@ class RunLoop:
             self.state["in_flight"] = None
             self._record(None, role, round_, "session_limit",
                          notice.replace("\n", " ")[:200], session_id,
-                         duration_s, transcript=_transcript_path(cwd, session_id))
+                         duration_s, transcript=_transcript_path(cwd, session_id),
+                         dispatch=facts)
             self._wait_out_session_limit(notice, label)
 
         self.state["in_flight"] = None
@@ -13081,7 +13354,7 @@ class RunLoop:
                 why = f"its verdict is invalid (outcome {outcome!r})"
             summary = f"{why}; the session ended rc={returncode}"
             self._record(None, role, round_, "invalid", summary, session_id,
-                         duration_s, transcript=transcript)
+                         duration_s, transcript=transcript, dispatch=facts)
             self._debrief(role, None, round_, duration_s, verdict)
             self.log(f"{label} → invalid: {summary}")
             return why
@@ -13093,7 +13366,8 @@ class RunLoop:
         lists = {key: [str(x) for x in verdict[key]] for key in WRAP_UP_LISTS
                  if isinstance(verdict.get(key), list)}
         self._record(None, role, round_, outcome, summary, session_id,
-                     duration_s, transcript=transcript, extra=lists)
+                     duration_s, transcript=transcript, extra=lists,
+                     dispatch=facts)
         self._debrief(role, None, round_, duration_s, verdict)
         self.log(f"{label} → {outcome}: {summary[:160]}")
         if outcome == "blocked":
@@ -13190,6 +13464,7 @@ class RunLoop:
             return True, "no gate"
         n = 1 + sum(1 for row in self.state["history"]
                     if row.get("role") == role)
+        started = _now_iso()
         log_path = self.slice_dir / f"{role.replace('-', '_')}_r{n}.log"
         argv = target.gate_argv
         self.log(f"{label} gate #{n} running in {root.name} on {branch} "
@@ -13228,10 +13503,12 @@ class RunLoop:
         except OSError:
             lines = []
         tail = lines[-1] if lines else ""
-        self._record(None, role, n, outcome, tail, None, duration_s,
-                     extra={"repo": str(root),
-                            **({"reused": {" ".join(argv): found["run"]}}
-                               if found is not None else {})})
+        row = self._record(None, role, n, outcome, tail, None, duration_s,
+                           extra={"repo": str(root),
+                                  **({"reused": {" ".join(argv): found["run"]}}
+                                     if found is not None else {})},
+                           started_at=started)
+        self._keep_gate(role, row, log_path)
         self.log(f"{label} gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "
                  f"({duration_s}s) {tail[:120]}")
         return outcome != "red", str(log_path)
@@ -13728,7 +14005,7 @@ class RunLoop:
                               if h.get("role") == "wrap-up"), default=0)
             reasons.append(self._dispatch_wrap_up(
                 self._fixes_prompt(repos, branch, verdict_path), verdict_path,
-                fx, label=label, round_=round_))
+                fx, label=label, round_=round_, kind="fixes"))
         # 6. After the session, whatever its outcome: the trees settled, and
         # what it took back read off the store.
         reasons += self._wrap_up_settle(fx, ctx, branch=branch, label=label)

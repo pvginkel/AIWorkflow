@@ -428,6 +428,13 @@ def _today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def _now_iso() -> str:
+    """The time an entry is created (`created_at`): the process's local wall
+    clock, offset-aware, as the loops write every time (run_loop's
+    `_now_iso`)."""
+    return datetime.now().astimezone().isoformat()
+
+
 def _date(date: str | None) -> str:
     if date is None:
         return _today()
@@ -639,6 +646,7 @@ def _entry(eid: str, kind: str | None, headline: str, body: list[str],
         "consequence": _collapse(consequence) or None,
         "proposal": _collapse(proposal) or None,
         "evidence": evidence, "author": author, "by": _collapse(by) or None,
+        "created_at": _now_iso(),
         "labels": _ordered_labels(labels) if labels is not None else None,
         "notes": [], "wrap_up": None, "strike": None, "ruling": None,
     }

@@ -31,9 +31,11 @@ sub-agents:
 
 **The store.** `{title, summary?, step?, for?, context: [paragraph],
 premises?: [{premise, fact, changes}], out_of_scope?: [line], size?: {phases,
-repos: [name], tests?}, entries: [entry]}`, an entry `{id, kind, headline,
+repos: [name], tests?}, entries: [entry]}`, an entry `{id, kind, put_at, headline,
 body, options?: [{label, line?}], recommend?, proposal?, default?, check?,
-due?, notes?: [{by, date, text}], answer_lines?}`. The kind is the block's:
+due?, notes?: [{by, date, text}], answer_lines?}`, `put_at` the time `append`
+put it (offset-aware ISO, kept through every later change; an ask of an older
+store has none). The kind is the block's:
 a `decision` carries `options` (with an optional `recommend`) or a
 `proposal`, and may carry `check`; a `question` may carry `default`; an
 `action` may carry `options` and `check`, and `due` (merge, test, push or
@@ -139,7 +141,7 @@ DEFERRED = "deferred"
 CLAIM = "Pilot does it"
 AGENT = "agent"
 
-ENTRY_FIELDS = ("id", "kind", "headline", "body", *BLOCK_KEYS, "due", "notes",
+ENTRY_FIELDS = ("id", "kind", "put_at", "headline", "body", *BLOCK_KEYS, "due", "notes",
                 "answer_lines")
 FRAME_FIELDS = ("title", "summary", "step", "for", "context", *OPENING_FIELDS)
 STORE_FIELDS = (*FRAME_FIELDS, "entries")
@@ -181,6 +183,12 @@ _EXTENSIONLESS = frozenset((
 _HOST_SUFFIXES = frozenset((
     "com", "org", "net", "nl", "io", "home", "local", "lan", "internal", "svc", "cluster",
 ))
+
+
+def _now_iso() -> str:
+    """The time an ask is put (`put_at`): the process's local wall clock,
+    offset-aware, as the loops write every time (run_loop's `_now_iso`)."""
+    return dt.datetime.now().astimezone().isoformat()
 
 
 class AskError(Exception):
@@ -459,6 +467,15 @@ def _options_problems(options, who: str) -> list[str]:
     return found
 
 
+def _is_time(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return dt.datetime.fromisoformat(value).tzinfo is not None
+    except ValueError:
+        return False
+
+
 def entry_problems(entry) -> list[str]:
     """Every fault of one ask on its own; the document's faults are
     `problems()`'s."""
@@ -492,6 +509,8 @@ def entry_problems(entry) -> list[str]:
             found.append(f"{who}: {_ARTICLE[kind]} {kind} takes no `due`")
         elif entry["due"] not in DUES:
             found.append(f"{who}: `due` is one of {', '.join(DUES)}, not `{entry['due']}`")
+    if "put_at" in entry and not _is_time(entry["put_at"]):
+        found.append(f"{who}: `put_at: {entry['put_at']}` is no offset-aware ISO 8601 time")
     if "options" in entry:
         found += _options_problems(entry["options"], who)
     if "recommend" in entry:
@@ -1273,7 +1292,7 @@ def append(store: dict, kind: str, headline: str, body: str, *, id: str | None =
     eid = id or next_id(store, kind)
     if any(e.get("id") == eid for e in store["entries"]):
         raise AskError(f"the store holds an ask {eid} already")
-    entry: dict = {"id": eid, "kind": kind}
+    entry: dict = {"id": eid, "kind": kind, "put_at": _now_iso()}
     _set(entry, "headline", headline)
     _set(entry, "body", body)
     for key in (*BLOCK_KEYS, "due"):

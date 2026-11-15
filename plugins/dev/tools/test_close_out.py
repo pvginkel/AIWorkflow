@@ -52,6 +52,22 @@ def entry_of(slice_dir, eid):
     return next(e for e in store(slice_dir)["entries"] if e["id"] == eid)
 
 
+@contextlib.contextmanager
+def clock(at):
+    """close_out's clock stopped at `at` (`_now_iso`, the time an entry is
+    created)."""
+    was = close_out._now_iso
+    close_out._now_iso = lambda: at
+    try:
+        yield
+    finally:
+        close_out._now_iso = was
+
+
+T1 = "2026-11-15T09:30:00.123456+01:00"
+T2 = "2026-11-16T14:05:07.654321+01:00"
+
+
 def run_cli(*argv, stdin=None):
     out, err = io.StringIO(), io.StringIO()
     old_stdin = sys.stdin
@@ -1023,11 +1039,12 @@ def test_append_stores_the_entry_in_the_store_shape():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = make_slice(tmp)
         close_out.init_report(slice_dir)
-        code, out, _ = run_cli("append", slice_dir, *with_flags(
-            DEFECT, body="-", severity="minor",
-            consequence="an operator  reads\na wrong status",
-            proposal="Card it:\n  the fix  needs a design."),
-                               stdin="\n  first line\n\nsecond paragraph  \n\n")
+        with clock(T1):
+            code, out, _ = run_cli("append", slice_dir, *with_flags(
+                DEFECT, body="-", severity="minor",
+                consequence="an operator  reads\na wrong status",
+                proposal="Card it:\n  the fix  needs a design."),
+                                   stdin="\n  first line\n\nsecond paragraph  \n\n")
         assert code == 0 and out.strip() == "B1"
         data = store(slice_dir)
         assert data["store"] == 2 and data["slice"] == "007_argocd_tools_presync_hook"
@@ -1039,6 +1056,7 @@ def test_append_stores_the_entry_in_the_store_shape():
             "consequence": "an operator reads a wrong status",
             "proposal": "Card it: the fix needs a design.",
             "evidence": "witnessed", "author": "code-reviewer, P3 r1", "by": None,
+            "created_at": T1,
             "labels": {"trigger": "ordinary-condition", "impact": "broken",
                        "signal": "silent", "fix": "design", "area": "sensitive",
                        "repo": "KubeCoder"},
@@ -1584,7 +1602,8 @@ def test_amend_replaces_each_field_given_and_leaves_no_note():
             consequence="an operator misreads", proposal="Card it: a design.",
             severity="nit", by=BY))                                                 # B2
         b1, b2 = entry_of(slice_dir, "B1"), entry_of(slice_dir, "B2")
-        assert {**b1, "id": "B2"} == b2
+        assert b1["created_at"] <= b2["created_at"]
+        assert {**b1, "id": "B2", "created_at": b2["created_at"]} == b2
         # a defect owes no proposal: an empty one takes it off
         assert _amend(slice_dir, "B1", "--proposal", "")[0] == 0
         assert entry_of(slice_dir, "B1")["proposal"] is None
@@ -4395,6 +4414,71 @@ def test_restore_wrap_up_writes_brings_its_work_back_over_no_ruling():
         e2 = entry_of(slice_dir, "E2")
         assert e2["headline"] == "the wrap-up's own"
         assert entry_of(slice_dir, "E1")["headline"] == "left out"
+
+
+
+def test_an_entry_is_stamped_when_created_and_keeps_the_time_through_every_update():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        with clock(T1):
+            run_cli("append", slice_dir, *DEFECT)                                 # B1
+            eid = close_out.append_entry(slice_dir, "event", "an event", "b",
+                                         consequence="none")
+        assert entry_of(slice_dir, "B1")["created_at"] == T1
+        assert entry_of(slice_dir, eid)["created_at"] == T1
+        with clock(T2):
+            close_out.add_note(slice_dir, "B1", "code-reviewer", "a note")
+            close_out.amend_entry(slice_dir, "B1", headline="controller: amended")
+            close_out.propose_entry(slice_dir, "B1", WU, "Card it: a design.")
+            close_out.render_report(slice_dir)
+            close_out.strike_entry(slice_dir, "B1", "fixed", by=WU, commit="a" * 40)
+            close_out.strike_entry(slice_dir, eid, "closed")
+        b1 = entry_of(slice_dir, "B1")
+        assert b1["strike"] and b1["headline"] == "controller: amended"
+        assert b1["created_at"] == entry_of(slice_dir, eid)["created_at"] == T1
+
+
+def test_an_entry_the_wrap_up_appended_comes_back_with_its_own_time():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        before = store(slice_dir)
+        with clock(T1):
+            close_out.append_entry(slice_dir, "event", "the wrap-up's own", "b",
+                                   consequence="none")                        # E1
+        left = store(slice_dir)
+        (slice_dir / "close-out.json").write_text(json.dumps(before))
+        with clock(T2):
+            close_out.append_entry(slice_dir, "event", "left out", "b", consequence="none")
+            assert close_out.restore_wrap_up_writes(
+                slice_dir, before, left, {}, "the fixes pass landed its branches",
+                date="2026-11-16") == ["E2"]
+        assert entry_of(slice_dir, "E1")["created_at"] == T2
+        assert entry_of(slice_dir, "E2")["created_at"] == T1
+
+
+def test_a_store_from_before_the_creation_time_loads_renders_and_stays_without_one():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        close_out.init_report(slice_dir)
+        with clock(T1):
+            run_cli("append", slice_dir, *DEFECT)                                 # B1
+            run_cli("append", slice_dir, *ACTION)                                 # A1
+        close_out.render_report(slice_dir)
+        rendered = (report(slice_dir), (slice_dir / close_out.RECORD_NAME).read_text(),
+                    close_out.show_view(slice_dir), close_out.list_view(slice_dir))
+        assert not any(T1 in text or "created_at" in text for text in rendered)
+        old = store(slice_dir)
+        for entry in old["entries"]:
+            del entry["created_at"]
+        (slice_dir / "close-out.json").write_text(json.dumps(old, indent=2) + "\n")
+        close_out.render_report(slice_dir)
+        assert (report(slice_dir), (slice_dir / close_out.RECORD_NAME).read_text(),
+                close_out.show_view(slice_dir), close_out.list_view(slice_dir)) == rendered
+        close_out.add_note(slice_dir, "B1", "code-reviewer", "a note")
+        close_out.amend_entry(slice_dir, "A1", headline="controller: amended")
+        assert not any("created_at" in e for e in store(slice_dir)["entries"])
 
 
 if __name__ == "__main__":

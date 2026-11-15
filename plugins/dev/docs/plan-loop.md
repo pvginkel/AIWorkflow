@@ -64,7 +64,12 @@ uncommitted changes ·
 **130** interrupted: `plan_loop.py stop <slice-dir>` sends the loop SIGINT, as Ctrl-C, and waits
 for `plan.lock` to go free, as the run loop's `stop` does ([runner-state.md](runner-state.md)).
 Every exit past the refusals is on disk as `plan_state.json`'s `exit`: its code, and for an exit
-4 its `reason` and `document`, for a bail its `reason`, for a halt where it stopped.
+4 its `reason` and `document`, for a bail its `reason`, for a halt where it stopped. Every save of
+`plan_state.json` is kept whole in the slice's run records too ([runner-state.md](runner-state.md)
+§ The run records), and each `history` row records what the run loop's does: `started_at`,
+`plugin_version`, `model` and `effort`, and a writer pass's `kind`, `first`, `review-fix` or
+`fold` (the pass that folds in a sibling's ruling once the review is behind the plan; a pass
+after the writer's own questions takes the kind of the pass that asked them).
 
 **Detached.** `run … --detach` puts the loop in a session of its own, as the run loop's does, and
 returns once the loop is past its refusals, or with its refusal's code. `plan_loop.py wait

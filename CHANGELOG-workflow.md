@@ -4,6 +4,57 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — The run records: every run kept as it goes in the plugin's data folder, every history row says when it began and on what, every gate and sweep kept, a seed for the old slices (v0.10.80)
+
+The workflow's run records batch for the analysis dashboard's labeller (EPIC-12, P-278):
+AIWF-183, AIWF-185, AIWF-186, AIWF-187 and AIWF-197. `runner-state.md` § The run records is the
+contract.
+
+- **The run records** (AIWF-183). Both loops keep their state file whole, at every save and at
+  the exit record, in the installed plugin's data folder:
+  `~/.claude/plugins/data/dev-aiworkflow/runs/<spec-repo>/<NNN_slug>/`. Every slice of every
+  project on the home is kept there, for the labeller the collector runs over `~/.claude/plugins`.
+  - The folder is Claude Code's `${CLAUDE_PLUGIN_DATA}`. That variable reaches no Bash command,
+    so the loops compute it from the installed key (`plugin_data_dir`). A run from a checkout
+    keeps its records in the installed plugin's folder too.
+  - The folder was tried on this home first, with a probe plugin installed from a local
+    marketplace. It was created at the first reference and kept across an update. It was
+    deleted on uninstall.
+  - Each file is written whole and renamed into place. A failed write is one log line for the
+    run and never stops it.
+- **History rows** (AIWF-185). Every row of both loops records `started_at`, `plugin_version`,
+  `model` and `effort`, a consult's `site`, and a round's `kind`:
+  - code-writer: `first`, `gate-fix`, `review-fix` or `ruling`;
+  - wrap-up: `first` or `fixes`;
+  - plan-writer: `first`, `review-fix` or `fold`.
+
+  `in_flight` carries them, so a reattached round's row keeps the interrupted round's.
+- **When an ask was put, and an entry created** (AIWF-186). `asks.py append` stamps `put_at`,
+  and every close-out entry gets `created_at`.
+  - Both use the loops' offset-aware wall clock.
+  - Both are kept through every later change, and neither is rendered.
+  - An older store loads unchanged.
+- **Every gate and every sweep** (AIWF-187). Each gate run the driver makes is kept in `gates/`,
+  each under a name that says what ran it:
+  - the phase gate, `P<id>_gate_<n>`;
+  - the re-gate of a red, `P<id>_regate_<n>`;
+  - a red's run on the merge base, `P<id>_merge-base_<n>`;
+  - the doc, wrap-up and fixes gates.
+
+  Every sweep that ran is kept as `sweeps/r<n>.json`. `gate_sweep` still holds the last.
+- **The seed** (AIWF-197). `seed_run_records.py [--groups DIR] [--data-dir DIR] [--dry-run]
+  SPEC_REPO…` copies the state files of every slice folder of the spec repos it is given into
+  the same places. It also copies the prototype's `adopted/*.toml` groups, checked first, into
+  `groups/`.
+  - It never replaces a record that is there, so a re-run adds only what the first run could
+    not see.
+  - When and where it runs is put to the operator (PilotAppSpecs
+    `tools/cost-dashboard/asks/t16-run-records.md`).
+  - Its dry run over PilotAppSpecs found 38 slices and the 8 group files.
+- The plan loop's suite now refuses a test that reaches the real `run_kc_session`. A test
+  written for this batch drove the session loop directly and dispatched two real plan-writer
+  sessions against `/tmp` slices.
+
 ## 2026-11-15 — The plugin read whole after the handover: what no longer added up (v0.10.79)
 
 The consistency review of AIWF-209. Five readers on Fable 5.2 at `high` read the plugin's agents,

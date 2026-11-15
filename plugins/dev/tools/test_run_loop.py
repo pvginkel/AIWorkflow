@@ -102,6 +102,13 @@ run_loop.INSTALLED_PLUGINS = NO_HOME / "installed_plugins.json"
 # --plugin-dir run's (runs_from_checkout). Stood in for an install here, so
 # the guard's tests see it bail; the tests of a checkout point it elsewhere.
 run_loop.PLUGINS_HOME = run_loop.TOOLS_DIR.parent.parent
+# The run records go under the installed plugin's data folder, which is in
+# the plugin home: this checkout's `plugins/` above, the operator's own on a
+# test that points it back. Stubbed as a folder that cannot be told, so no
+# loop of the suite keeps records; the tests of the records give theirs a
+# folder in their own tmp dir (`records_in`).
+REAL_PLUGIN_DATA_DIR = run_loop.plugin_data_dir
+run_loop.plugin_data_dir = lambda tools_dir=None: None
 
 # Pilot's halt file is the host's (`/work/...`): a pod running the suite while
 # a halt holds would halt every run in it. Pointed at a file that does not
@@ -670,7 +677,7 @@ class ScriptedLoop(RunLoop):
                 "log": str(log_path), "duration_s": 0}
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
-               agent=None, display=None):
+               agent=None, display=None, kind=None, site=None):
         # The real _spawn's preamble, kept in step so the scripted loop
         # exercises the resume's stop entries, the salvage of an interrupted
         # round, and the spec tree's base assertion.
@@ -724,11 +731,11 @@ class SpawningLoop(ScriptedLoop):
         self._pending = None
 
     def _spawn(self, role, prompt, cwd, verdict_path, phase_id, round_,
-               agent=None, display=None):
+               agent=None, display=None, kind=None, site=None):
         self._pending = (role, Path(verdict_path))
         verdict, session = RunLoop._spawn(
             self, role, prompt, cwd, Path(verdict_path), phase_id, round_,
-            agent=agent, display=display)
+            agent=agent, display=display, kind=kind, site=site)
         self.prompts.append((role, prompt))
         self.spawned.append((role, phase_id, round_, verdict["outcome"],
                              None))
@@ -19685,6 +19692,512 @@ def test_wait_relaunches_a_gone_fixes_pass_with_its_own_command():
         assert out.splitlines()[1] == (
             f"next: python3 {run_loop.SCRIPT} fixes "
             f"{os.path.abspath(slice_dir)} --detach")
+
+
+
+# -- the run records (AIWF-183, AIWF-185, AIWF-187) ----------------------------
+#
+# What the driver keeps of a run for a reader of every slice of the home at
+# once — in the installed plugin's data folder, a folder per slice under its
+# spec repo's name: the state whole at every save, every gate's record, every
+# sweep's. And the facts each history row carries of its round.
+
+class records_in(patched):
+    """The run records pointed into `tmp`: `plugin_data_dir` answers a folder
+    there, as the installed plugin's would."""
+
+    def __init__(self, tmp):
+        self.data = Path(tmp) / "plugin-data"
+        super().__init__(run_loop,
+                         plugin_data_dir=lambda tools_dir=None: self.data)
+
+    def of(self, slice_dir):
+        """The slice's records folder, as the loop names it."""
+        return run_loop.run_records_dir(slice_dir, data_dir=self.data)
+
+
+@contextlib.contextmanager
+def environ(**values):
+    saved = {k: os.environ.get(k) for k in values}
+    os.environ.update(values)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def iso(stamp):
+    return datetime.fromisoformat(stamp)
+
+
+def test_the_data_folder_is_named_for_the_installed_key():
+    assert run_loop.plugin_data_id("dev@aiworkflow") == "dev-aiworkflow"
+    assert run_loop.plugin_data_id("my.plug_in@mkt place/v2+x~") \
+        == "my-plug_in-mkt-place-v2-x-"
+    assert run_loop.plugin_data_id("a-b_C9") == "a-b_C9"
+
+
+def test_the_data_folder_is_the_installed_keys_from_the_cache_or_a_checkout():
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp) / ".claude" / "plugins"
+        path = Path(tmp) / "installed_plugins.json"
+        cached = home / "cache" / "my.market" / "dev" / "0.9.1" / "tools"
+        checkout = Path("/work/AIWorkflow/plugins/dev/tools")
+
+        def keys(*names):
+            path.write_text(json.dumps({"plugins": {
+                k: [{"scope": "user", "version": "1.0"}] for k in names}}))
+
+        with patched(run_loop, INSTALLED_PLUGINS=path, PLUGINS_HOME=home):
+            data = REAL_PLUGIN_DATA_DIR
+            keys("dev@my.market", "kubecoder@kubecoder-config")
+            assert data(cached) == home / "data" / "dev-my-market"
+            # a --plugin-dir run's checkout: the agents load the installed
+            # plugin, and its folder is the one place
+            assert data(checkout) == home / "data" / "dev-my-market"
+            # a --plugin-dir session's own variable names another folder
+            with environ(CLAUDE_PLUGIN_DATA=str(home / "data" / "dev-inline")):
+                assert data(checkout) == home / "data" / "dev-my-market"
+            keys("dev@my.market", "dev@fork")
+            assert data(cached) == home / "data" / "dev-my-market", \
+                "the cache layout names the marketplace"
+            assert data(checkout) is None, "two dev@ keys and no layout"
+            keys("kubecoder@kubecoder-config")
+            assert data(checkout) is None
+            path.unlink()
+            assert data(cached) is None and data(checkout) is None
+            # a slice's folder under it, from a checkout
+            keys("dev@aiworkflow")
+            slice_dir = Path(tmp) / "Specs" / "slices" / "active" / "012_x"
+            slice_dir.mkdir(parents=True)
+            with patched(run_loop, plugin_data_dir=data):
+                assert run_loop.run_records_dir(slice_dir) == (
+                    home / "data" / "dev-aiworkflow" / "runs" / "Specs"
+                    / "012_x")
+
+
+def test_a_slices_records_are_named_for_its_spec_repo_and_its_folder():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        spec = Path(tmp) / "checkout-of-specs"
+        spec.mkdir()
+        sh(spec, "init", "-q", "-b", "main")
+        sh(spec, "remote", "add", "origin",
+           "git@github.com:owner/PilotAppSpecs.git")
+        data = Path(tmp) / "data"
+        want = data / "runs" / "PilotAppSpecs" / "012_the_slice"
+        # the same folder wherever the slice sits as it moves
+        for bucket in ("backlog", "active", "completed"):
+            slice_dir = spec / "slices" / bucket / "012_the_slice"
+            slice_dir.mkdir(parents=True)
+            assert run_loop.run_records_dir(slice_dir, data_dir=data) == want
+        sh(spec, "remote", "set-url", "origin",
+           "https://github.com/owner/OtherSpecs/")
+        assert run_loop.run_records_dir(slice_dir, data_dir=data) == \
+            data / "runs" / "OtherSpecs" / "012_the_slice"
+        sh(spec, "remote", "remove", "origin")
+        assert run_loop.run_records_dir(slice_dir, data_dir=data) == \
+            data / "runs" / "checkout-of-specs" / "012_the_slice"
+        # no data folder (the suite's), no records
+        assert run_loop.run_records_dir(slice_dir) is None
+
+
+def test_the_run_records_hold_the_state_whole_at_every_save():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        folder = rec.of(slice_dir)
+        seen = []
+
+        def compares(loop):
+            seen.append(json.loads((folder / "state.json").read_text())
+                        == json.loads((slice_dir / "state.json").read_text()))
+
+        r = ScriptedLoop(slice_dir, [(*V["exec_done"], compares),
+                                     (*V["review_signoff"], compares),
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert seen == [True, True]
+        # the exit record, the run's last write, is in it too
+        mirror = json.loads((folder / "state.json").read_text())
+        assert mirror == load_state(slice_dir)
+        assert mirror["exit"]["code"] == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("[records] run records kept in") == 1
+        assert f"[records] run records kept in {folder}\n" in log
+
+
+def test_a_run_with_no_data_folder_keeps_no_records_and_says_so_once():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        log = (slice_dir / "log.txt").read_text()
+        assert log.count("[records] no run records kept: the installed "
+                         "plugin's data folder cannot be told") == 1
+
+
+def test_run_records_that_cannot_be_written_never_stop_a_run_and_say_so_once():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        rec.data.write_text("a file where the folder would be\n")
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        assert state["phases"]["1"]["status"] == "merged"
+        assert state["exit"]["code"] == 0
+        log = (slice_dir / "log.txt").read_text()
+        failed = [line for line in log.splitlines()
+                  if "not written to the run records" in line]
+        assert len(failed) == 1, failed
+        assert f"[records] state.json not written to the run records in " \
+               f"{rec.of(slice_dir)} (" in failed[0]
+
+
+class SpawningGateLoop(SpawningLoop, KcExitLoop):
+    """SpawningLoop running the driver's own phase gate and sweep, as
+    KcExitLoop does: every row of a phase is the driver's own."""
+
+
+def rows_of(slice_dir, role):
+    return [h for h in load_state(slice_dir)["history"] if h["role"] == role]
+
+
+def test_every_history_row_says_when_it_began_and_what_ran_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        script = [V["exec_done"],                      # first, gate red
+                  FIXER_ISSUES,                        # the red's fixer
+                  V["exec_done"],                      # gate-fix
+                  V["review_issues"], V["exec_done"],  # review-fix
+                  V["review_issues"],
+                  ("consult", {"outcome": "fix_round", "summary": "real"}),
+                  V["exec_done"],                      # review-fix
+                  V["review_signoff"], *TAIL]
+        r = SpawningGateLoop(slice_dir, script, repo_root=repo,
+                             gate_rcs=[1, 1, 0])
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert not r.script
+        state = load_state(slice_dir)
+        # the run's first plugin stays the state's; each row names its own
+        assert state["plugin_version"] == OURS
+        for row in state["history"]:
+            assert row["plugin_version"] == OURS, row
+            if row["role"] == "doc-gate":   # the scripted doc gate's
+                continue
+            assert iso(row["started_at"]) <= iso(row["ts"]), row
+        writer = rows_of(slice_dir, "code-writer")
+        assert [h["kind"] for h in writer] == [
+            "first", "gate-fix", "review-fix", "review-fix"]
+        for role, rows in (("code-writer", writer),
+                           ("code-reviewer", rows_of(slice_dir, "code-reviewer")),
+                           ("consult", rows_of(slice_dir, "consult")),
+                           ("test-fixer", rows_of(slice_dir, "test-fixer")),
+                           ("test-agent", rows_of(slice_dir, "test-agent")),
+                           ("doc-writer", rows_of(slice_dir, "doc-writer"))):
+            assert rows, role
+            for row in rows:
+                assert (row["model"], row["effort"]) == run_loop.MODELS[role]
+                if role != "code-writer":
+                    assert "kind" not in row, row
+                if role != "consult":
+                    assert "site" not in row, row
+        assert rows_of(slice_dir, "test-agent")[0]["effort"] is None
+        [fixer] = rows_of(slice_dir, "test-fixer")
+        assert (fixer["phase"], fixer["round"]) == ("1", 1)
+        assert [h["site"] for h in rows_of(slice_dir, "consult")] == [
+            "review-funding", "completion"]
+        # a row no agent produced: the driver's gates and its sweep
+        for role in ("gate", "sweep"):
+            rows = rows_of(slice_dir, role)
+            assert rows, role
+            for row in rows:
+                assert row["model"] is None and row["effort"] is None
+                assert "kind" not in row and "site" not in row
+                assert iso(row["started_at"]) <= iso(row["ts"])
+
+
+def test_a_review_budget_consult_row_names_its_site():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        cap = run_loop.REVIEW_ROUND_CAP
+        script = [V["exec_done"], V["review_issues"], V["exec_done"]]
+        for _ in range(2, cap):
+            script += [V["review_issues"],
+                       ("consult", {"outcome": "fix_round", "summary": "f"}),
+                       V["exec_done"]]
+        script += [V["review_issues"],
+                   ("consult", {"outcome": "merge", "summary": "enough"}),
+                   *TAIL]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        sites = [h["site"] for h in rows_of(slice_dir, "consult")]
+        assert sites == ["review-funding"] * (cap - 2) + [
+            "review-budget", "completion"]
+
+
+def test_the_writer_round_after_a_ruled_review_question_is_a_ruling():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        outputs = slice_dir / "phases" / "P1"
+
+        def write_review(loop):
+            (outputs / "code_review_r1.md").write_text("# Review r1\n")
+
+        script = [V["exec_done"],
+                  ("code-reviewer", {"outcome": "issues", "summary": "gaps"},
+                   write_review),
+                  ("code-writer", {"outcome": "question",
+                                   "summary": "which mount point?"})]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 4
+        r2 = SpawningLoop(slice_dir, [
+            ("code-writer", {"outcome": "done", "summary": "ruling applied"}),
+            V["review_signoff"], *TAIL], resume=True, repo_root=repo)
+        r2.fake_git.branches.add("phase/074-P1")
+        with patched(run_loop, run_kc_session=r2.run_kc_session):
+            assert run_to_exit(r2) == 0
+        assert [(h["kind"], h["outcome"])
+                for h in rows_of(slice_dir, "code-writer")] == [
+            ("first", "done"), ("review-fix", "question"), ("ruling", "done")]
+
+
+def test_a_reattached_round_keeps_when_it_began_its_kind_and_its_model():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        state = resume_state(PROJECT, stage="gate")
+        state["phases"]["1"].update(executor_rounds=2, gate_fix_rounds=1)
+        began = "2026-11-01T10:00:00+01:00"
+        state["in_flight"] = {
+            "phase": "1", "role": "code-writer", "round": 2,
+            "verdict_path": str(slice_dir / "phases" / "P1"
+                                / "executor_result_r2.json"),
+            "session": "sess-crashed", "started_at": began,
+            "model": "opus", "effort": "xhigh", "kind": "gate-fix"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        seen = []
+        r = SpawningLoop(slice_dir, [
+            ("code-writer", DONE,
+             lambda loop: seen.append(dict(loop.state["in_flight"]))),
+            V["review_signoff"], *TAIL],
+            resume=True, repo_root=repo, gates=[False, True])
+        r.fake_git.branches.add("phase/074-P1")
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert r.session_resumes[0][:2] == ("code-writer", "sess-crashed")
+        # the resumed round's in-flight record keeps them for a crash again
+        assert (seen[0]["started_at"], seen[0]["kind"], seen[0]["model"]) \
+            == (began, "gate-fix", "opus")
+        [row] = rows_of(slice_dir, "code-writer")
+        assert (row["round"], row["started_at"], row["kind"], row["model"],
+                row["effort"]) == (2, began, "gate-fix", "opus", "xhigh")
+
+
+def test_an_old_state_resumes_and_its_salvaged_round_takes_todays_facts():
+    """A state from before the rows' new keys: its rows are left as they
+    are, its first plugin stays, and an interrupted round's record without
+    them gets the call site's kind and MODELS' model."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        outputs = slice_dir / "phases" / "P1"
+        outputs.mkdir(parents=True)
+        verdict_path = outputs / "executor_result_r1.json"
+        verdict_path.write_text('{"outcome": "done", "summary": "built"}')
+        state = resume_state(PROJECT, stage="executor")
+        old_row = {"ts": "t0", "phase": None, "role": "consult", "round": 1,
+                   "outcome": "complete", "summary": "", "session": None,
+                   "transcript": None, "duration_s": 1}
+        state.update(plugin_version="0.0.1", history=[dict(old_row)])
+        state["in_flight"] = {
+            "phase": "1", "role": "code-writer", "round": 1,
+            "verdict_path": str(verdict_path), "session": "sess-hung",
+            "started_at": "2026-11-01T09:00:00+01:00"}
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = SpawningLoop(slice_dir, [V["review_signoff"], *TAIL],
+                         resume=True, repo_root=repo)
+        r.fake_git.branches.add("phase/074-P1")
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        assert state["plugin_version"] == "0.0.1"
+        assert state["history"][0] == old_row
+        [row] = rows_of(slice_dir, "code-writer")
+        assert (row["session"], row["started_at"], row["kind"], row["model"],
+                row["effort"], row["plugin_version"]) == (
+            "sess-hung", "2026-11-01T09:00:00+01:00", "first",
+            *run_loop.MODELS["code-writer"], OURS)
+
+
+def test_a_recovered_round_began_at_its_first_session_a_redispatch_at_its_own():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        seen = []
+
+        def starts(loop):
+            seen.append(loop.state["in_flight"]["started_at"])
+
+        script = [("code-writer", "did the work, forgot the verdict", starts),
+                  ("code-writer", SWALLOWED),
+                  ("code-writer", DONE, starts),
+                  ("code-reviewer", SESSION_LIMIT_TEXT, starts),
+                  ("code-reviewer", {"outcome": "signoff", "summary": "ok"},
+                   starts),
+                  *TAIL]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        # the recovery resume is the same round: it began with the first
+        assert seen[0] == seen[1]
+        [writer] = rows_of(slice_dir, "code-writer")
+        assert writer["started_at"] == seen[0]
+        # the session limit's row is its attempt's; the redispatch, its own
+        limit, review = rows_of(slice_dir, "code-reviewer")
+        assert limit["outcome"] == "session_limit"
+        assert (limit["started_at"], review["started_at"]) == (seen[2], seen[3])
+        assert iso(seen[3]) >= iso(seen[2])
+        assert (limit["model"], limit["effort"]) == \
+            run_loop.MODELS["code-reviewer"]
+
+
+def test_the_wrap_ups_rows_are_its_first_dispatchs_and_its_gate_is_kept():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
+        assert run_to_exit(r) == 0
+        [row] = rows_of(slice_dir, "wrap-up")
+        assert (row["kind"], row["model"], row["effort"]) == (
+            "first", *run_loop.MODELS["wrap-up"])
+        assert iso(row["started_at"]) <= iso(row["ts"])
+        [gate] = rows_of(slice_dir, "wrap-up-gate")
+        assert gate["model"] is None and "kind" not in gate
+        kept = json.loads((rec.of(slice_dir) / "gates"
+                           / "wrap-up-gate_1.json").read_text())
+        assert kept == {**gate,
+                        "log": str(slice_dir / "wrap_up_gate_r1.log")}
+
+
+def test_the_fixes_pass_rows_are_its_kind_and_its_gate_is_kept():
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            records_in(tmp) as rec:
+        def plant(w):
+            ruled_fix(w.slice_dir, "the page reads wrong")
+            ruled_fix(w.slice_dir, "the chart pins the old tag",
+                      repo="Sibling")
+
+        w = fixes_world(tmp, plant=plant, sibling=True)
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True],
+                      wrap_gates=[True],
+                      wrap_ups=[(FIXES_DONE, doing(fix_in(w.repo, "B1"),
+                                                   fix_in(w.sib, "B2",
+                                                          "chart.yaml")))])
+        assert fixes_to_exit(r) == 0
+        [row] = rows_of(w.slice_dir, "wrap-up")
+        assert (row["kind"], row["model"]) == (
+            "fixes", run_loop.MODELS["wrap-up"][0])
+        [gate] = rows_of(w.slice_dir, "fixes-gate")
+        kept = json.loads((rec.of(w.slice_dir) / "gates"
+                           / "fixes-gate_1.json").read_text())
+        assert kept == {**gate,
+                        "log": str(w.slice_dir / "fixes_gate_r1.log")}
+        # the pass's own saves are mirrored, its exit record last
+        assert json.loads((rec.of(w.slice_dir) / "state.json").read_text()) \
+            == load_state(w.slice_dir)
+
+
+def test_every_gate_the_driver_runs_on_a_phase_is_kept():
+    """The phase's gates, the measurement's re-gate of a red and its run on
+    the merge base: each a record of its own, by what ran it."""
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], FIXER_ISSUES,
+                                   V["exec_done"], V["review_signoff"], *TAIL],
+                       repo_root=repo, gate_rcs=[1, 1, 0])
+        assert run_to_exit(r) == 0
+        gates = rec.of(slice_dir) / "gates"
+        rows = gate_rows(slice_dir)
+        assert [h["outcome"] for h in rows] == ["red", "red", "green"]
+        assert sorted(p.name for p in gates.iterdir()) == [
+            "P1_gate_1.json", "P1_gate_2.json", "P1_merge-base_1.json",
+            "P1_regate_1.json"]
+        for name, row in (("P1_gate_1", rows[0]), ("P1_regate_1", rows[1]),
+                          ("P1_gate_2", rows[2])):
+            kept = json.loads((gates / f"{name}.json").read_text())
+            assert kept == {**row, "log": str(outputs_of(r)
+                                              / f"gate_r{row['round']}.log")}
+        base = json.loads((gates / "P1_merge-base_1.json").read_text())
+        [m] = load_state(slice_dir)["phases"]["1"]["measurements"]
+        assert (base["phase"], base["round"], base["base_sha"],
+                base["outcomes"], base["plugin_version"]) == (
+            "1", 1, m["base_sha"], m["base"], OURS)
+        assert base["log"] == m["logs"]["base"] == str(
+            outputs_of(r) / "measure_r1_base.log")
+        assert iso(base["started_at"]) <= iso(base["ts"])
+        assert base["duration_s"] >= 0
+
+
+def test_the_doc_gates_are_kept_and_a_second_pass_never_replaces_the_first():
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            records_in(tmp) as rec:
+        slice_dir, repo = greens_repo(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo)
+        r.state.setdefault("history", [])
+        doc_gate_runs(r)
+        _, log_path = RunLoop._run_doc_gate(r, {"gate_runs": 0})
+        doc_row = r.state["history"][-1]
+        # two fixes passes, each counting its runs from 1
+        for _ in range(2):
+            RunLoop._run_doc_gate(r, {"gate_runs": 0}, "fixes_doc_gate",
+                                  "fixes-doc-gate", "[fixes]")
+        gates = rec.of(slice_dir) / "gates"
+        assert sorted(p.name for p in gates.iterdir()) == [
+            "doc-gate_1.json", "fixes-doc-gate_1.json",
+            "fixes-doc-gate_2.json"]
+        assert json.loads((gates / "doc-gate_1.json").read_text()) == {
+            **doc_row, "log": str(log_path)}
+        assert [json.loads((gates / f"fixes-doc-gate_{n}.json").read_text())[
+            "round"] for n in (1, 2)] == [1, 1]
+
+
+def test_every_sweep_that_ran_is_kept_whole_by_its_run_number():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        r = SweepRunLoop(slice_dir, [], repo_root=repo)
+        sweeps = rec.of(slice_dir) / "sweeps"
+        sweep, _ = run_sweep(r, repo)
+        first = (sweeps / "r1.json").read_text()
+        assert json.loads(first) == sweep
+        sweep, _ = run_sweep(r, repo)
+        assert sweep["run"] == 2
+        assert json.loads((sweeps / "r2.json").read_text()) == sweep
+        assert (sweeps / "r1.json").read_text() == first
+        row = r.state["history"][-1]
+        assert (row["role"], row["round"]) == ("sweep", 2)
+        assert iso(row["started_at"]) <= iso(row["ts"])
+    # a whole run: the record the state holds is the one kept
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        r = KcExitLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                   *TAIL], repo_root=repo)
+        assert run_to_exit(r) == 0
+        sweep = load_state(slice_dir)["gate_sweep"]
+        assert sorted(p.name for p in (rec.of(slice_dir) / "sweeps").iterdir()) \
+            == [f"r{sweep['run']}.json"]
+        assert json.loads((rec.of(slice_dir) / "sweeps"
+                           / f"r{sweep['run']}.json").read_text()) == sweep
 
 
 if __name__ == "__main__":
