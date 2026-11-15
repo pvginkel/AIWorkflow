@@ -8,7 +8,7 @@
 # only where AIWorkflow is an environment's primary repo.
 #
 # Without this file the controller writes a default one into the checkout,
-# untracked, with no tools at all (AIWF-175).
+# untracked, with no tools at all.
 
 capabilities:
   # What that default gives; a written file without it has no GitHub access.

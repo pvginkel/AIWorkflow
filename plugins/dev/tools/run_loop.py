@@ -645,7 +645,8 @@ class Bailout(Exception):
 
     def __init__(self, reason: str, phase: str | None = None,
                  details: str = "", consult: str | None = None,
-                 question: bool = False, asks: list[dict] | None = None):
+                 question: bool = False, asks: list[dict] | None = None,
+                 attach: list[str] | None = None):
         super().__init__(reason)
         self.reason = reason
         self.phase = phase
@@ -653,6 +654,9 @@ class Bailout(Exception):
         self.consult = consult
         self.question = question
         self.asks = asks
+        # files the question's document carries, slice-relative
+        # (`question_renders`)
+        self.attach = list(attach or [])
 
 
 class Halted(BaseException):
@@ -1082,15 +1086,69 @@ def question_asks(bail: Bailout) -> list[dict]:
              "body": body}]
 
 
-def writer_question_ask(verdict: dict, phase_id: str | None) -> dict:
+RENDER_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg")
+
+
+def question_renders(slice_dir: Path, phase_id: str,
+                     listed) -> tuple[list[str], list[str]]:
+    """The renders a code-writer's `question` verdict lists, as its document
+    attaches them (AIWF-167): (kept, dropped). A path, relative to the
+    slice folder, is kept where it resolves — `..` and symlinks followed —
+    to a regular file inside the folder's own `renders/P<phase_id>/` with
+    an image suffix (RENDER_SUFFIXES, any case): slice-relative, in the
+    order given, each once. Every other is dropped, as `<path>: <why>`."""
+    root = Path(slice_dir).resolve()
+    folder = root / "renders" / f"P{phase_id}"
+    kept: list[str] = []
+    dropped: list[str] = []
+    if listed in (None, []):
+        return kept, dropped
+    if not isinstance(listed, list):
+        return kept, [f"{listed!r}: `renders` is not a list"]
+    for item in listed:
+        if not isinstance(item, str) or not item.strip():
+            dropped.append(f"{item!r}: not a path")
+            continue
+        try:
+            path = (root / item.strip()).resolve()
+        except (OSError, RuntimeError) as e:
+            dropped.append(f"{item}: not resolved ({e})")
+            continue
+        if not path.is_relative_to(folder):
+            why = f"not inside renders/P{phase_id}/"
+        elif path.suffix.lower() not in RENDER_SUFFIXES:
+            why = "not an image"
+        elif not path.is_file():
+            why = "no such file" if not path.exists() else "not a regular file"
+        else:
+            rel = path.relative_to(root).as_posix()
+            if rel not in kept:
+                kept.append(rel)
+            continue
+        dropped.append(f"{item}: {why}")
+    return kept, dropped
+
+
+def renders_sentence(renders: Sequence[str]) -> str:
+    """The sentence a question's ask says its attached renders in."""
+    names = _join([f"`{r}`" for r in renders])
+    return (f"Open the render{'s' if len(renders) > 1 else ''} attached to "
+            f"this document before you answer: {names}.")
+
+
+def writer_question_ask(verdict: dict, phase_id: str | None,
+                        renders: Sequence[str] = ()) -> dict:
     """A writer's `question` verdict as its document's ask: a decision where
     it gives `options` (labels, or `{label, line}`) — with its `recommend`
-    where it gives one — a question otherwise. The doc phase's writer has no
-    phase."""
+    where it gives one — a question otherwise, its body ending on the
+    sentence that names `renders` where it attaches any. The doc phase's
+    writer has no phase."""
     role, where = (("code-writer", f" in P{phase_id}") if phase_id
                    else ("doc-writer", " in the doc phase"))
     body = _prose(str(verdict.get("summary") or "").splitlines()) \
         or "(the writer gave no text)"
+    if renders:
+        body += "\n\n" + renders_sentence(renders)
     ask = {"kind": "question", "headline": f"The {role}'s question{where}",
            "body": body}
     options = verdict.get("options")
@@ -9714,9 +9772,23 @@ class RunLoop:
             if ps is not None and ps.get("stage") == "review":
                 ps["operator_question"] = verdict.get("summary", "")
                 self._save_state()
+            # The renders it lists go with its document (AIWF-167); the doc
+            # phase's writer, with no phase, attaches none.
+            renders: list[str] = []
+            if phase_id:
+                renders, dropped = question_renders(
+                    self.slice_dir, phase_id, verdict.get("renders"))
+                for why in dropped:
+                    self.log(f"[P{phase_id}] a render the question lists is "
+                             f"not attached — {why}")
+                if renders:
+                    self.log(f"[P{phase_id}] the question attaches "
+                             f"{len(renders)} render(s): {', '.join(renders)}")
             raise Bailout("operator_question", phase=phase_id, question=True,
                           details=verdict.get("summary", ""),
-                          asks=[writer_question_ask(verdict, phase_id)])
+                          asks=[writer_question_ask(verdict, phase_id,
+                                                    renders)],
+                          attach=renders)
         if verdict["outcome"] == "blocked":
             raise Bailout("blocked", phase=phase_id,
                           details=verdict.get("summary", ""))
@@ -12330,17 +12402,25 @@ class RunLoop:
         and the doc phase goes on from that green; red there too, the
         wrap-up is left out all the same and the red is the doc phase's, for
         the writer's nudge (with no writer nobody is nudged and nothing
-        stops: `_wrap_up_decide`)."""
+        stops: `_wrap_up_decide`).
+
+        A run with its commits that times out counts as a red here
+        (`_wrap_up_doc_gate`, AIWF-176 — slice 038's landing went on one run
+        of `kc project test` past GATE_TIMEOUT); the run without them is the
+        doc phase's own gate, and its timeout stops as it does there."""
         primary = self.repo_root
         home = watch["expected"]
         self.log(f"[wrap-up] the doc gate on {branch}, with its commits")
         self.git("checkout", branch, root=primary)
         try:
-            green, log_path = self._run_doc_gate(ds)
+            green, log_path, late = self._wrap_up_doc_gate(ds)
+            late_again = False
             if not green:
-                self.log("[wrap-up] the doc gate is red with its commits — "
-                         "once more on the same tree before they are left out")
-                green, log_path = self._run_doc_gate(ds)
+                self.log("[wrap-up] the doc gate "
+                         + ("timed out" if late else "is red")
+                         + " with its commits — once more on the same tree "
+                           "before they are left out")
+                green, log_path, late_again = self._wrap_up_doc_gate(ds)
                 if green:
                     self.log("[wrap-up] the doc gate is green with its "
                              "commits on its re-run — they land")
@@ -12349,18 +12429,45 @@ class RunLoop:
             self.git("checkout", home, root=primary)
         if green:
             return {"head": head, "green": True, "log": str(log_path)}
-        self.log(f"[wrap-up] the doc gate is red with its commits on two runs "
-                 f"— once more on {home} without them")
+        # Two reds keep their words; a timeout among them says so.
+        twice, green_after, red_after = {
+            (False, False): ("is red with its commits on two runs",
+                             " and green", " and"),
+            (True, True): ("timed out with its commits on two runs",
+                           " and is green", " and is red"),
+            (True, False): ("timed out with its commits, then was red on its "
+                            "re-run", ", and is green", ", and is red"),
+            (False, True): ("was red with its commits, then timed out on its "
+                            "re-run", ", and is green", ", and is red"),
+        }[(late, late_again)]
+        self.log(f"[wrap-up] the doc gate {twice} — once more on {home} "
+                 "without them")
         green_without, log_without = self._run_doc_gate(ds)
         without = {"head": self.git("rev-parse", "HEAD", root=primary),
                    "green": green_without, "log": str(log_without)}
         if green_without:
-            raise WrapUpLeftOut("the doc gate is red with its commits on two "
-                                "runs and green without them (output in "
-                                f"{log_path})", without)
-        raise WrapUpLeftOut("the doc gate is red with its commits on two runs "
-                            "and without them — that red is the doc phase's "
-                            f"(output in {log_without})", without)
+            raise WrapUpLeftOut(f"the doc gate {twice}{green_after} without "
+                                f"them (output in {log_path})", without)
+        raise WrapUpLeftOut(f"the doc gate {twice}{red_after} without them — "
+                            "that red is the doc phase's (output in "
+                            f"{log_without})", without)
+
+    def _wrap_up_doc_gate(self, ds: dict) -> tuple[bool, Path, bool]:
+        """One run of the doc gate with the wrap-up's commits: (green, its
+        output, whether it timed out). A command past GATE_TIMEOUT is not
+        the stop here it is in the doc phase's own gate (`_doc_gate_cmd`):
+        the run is red, and gets the re-run a red gets. Any other stop
+        passes."""
+        try:
+            green, log_path = self._run_doc_gate(ds)
+        except Bailout as e:
+            if e.reason != "timeout":
+                raise
+            self.log(f"[wrap-up] doc gate #{ds['gate_runs']} timed out — "
+                     f"{e.details}")
+            return (False, self.slice_dir / f"doc_gate_r{ds['gate_runs']}.log",
+                    True)
+        return green, log_path, False
 
     def _wrap_up_decide(self, ds: dict, wu: dict, outcome: str) -> None:
         """The stage's outcome and the stage after it, saved together, so a
@@ -13298,7 +13405,7 @@ class RunLoop:
              "question": bail.question, "ts": _now_iso(),
              "run_phase": self.state.get("run_phase"),
              "details": _clip(bail.details, BAIL_DETAILS_CAP),
-             "document": document})
+             "document": document, "attach": bail.attach})
         self._save_state()
         # The round the resume starts follows this stop.
         track = (f"P{bail.phase}" if bail.phase
@@ -13312,6 +13419,8 @@ class RunLoop:
             "consult": bail.consult,
             "question": bail.question,
             "document": document,
+            # slice-relative: the files the session attaches to the document
+            "attach": bail.attach,
             "ts": _now_iso(),
         }
         with open(self.slice_dir / "bailout.json", "w") as f:
@@ -13515,6 +13624,7 @@ def run_detached(loop, slice_arg: Path, script: Path = SCRIPT) -> None:
           f"`{script.name} stop` interrupts it", flush=True)
     print(f"next: python3 {script} wait {os.path.abspath(slice_arg)}",
           flush=True)
+    print(wait_timeout_line(), flush=True)
 
 
 # `wait` — what the stage's session waits on inside its turn (pilot.md § A
@@ -13537,26 +13647,47 @@ STOP_WAIT = 120
 STOP_POLL = 1
 
 
-def wait_default(environ=None) -> int:
-    """`wait`'s seconds when `--for` gives none: WAIT_HEADROOM under the
-    Bash tool's cap on a foreground call — BASH_MAX_TIMEOUT_MS, in
-    milliseconds, which the host's settings put in a session's environment
-    — and at most WAIT_CEILING. Unset, not a whole number, or a cap that
-    leaves nothing under it: WAIT_DEFAULT, inside the tool's own ten
-    minutes."""
+BASH_TOOL_MAX_MS = 600000  # the Bash tool's own maximum, where no cap is set
+
+
+def bash_cap_ms(environ=None) -> int | None:
+    """The Bash tool's cap on a foreground call, in milliseconds —
+    BASH_MAX_TIMEOUT_MS, which the host's settings put in a session's
+    environment — where it is a positive whole number; None otherwise."""
     env = os.environ if environ is None else environ
     try:
         cap_ms = int((env.get("BASH_MAX_TIMEOUT_MS") or "").strip())
     except ValueError:
+        return None
+    return cap_ms if cap_ms > 0 else None
+
+
+def wait_default(environ=None) -> int:
+    """`wait`'s seconds when `--for` gives none: WAIT_HEADROOM under the
+    Bash tool's cap on a foreground call (`bash_cap_ms`), and at most
+    WAIT_CEILING. Unset, not a whole number, or a cap that leaves nothing
+    under it: WAIT_DEFAULT, inside the tool's own ten minutes."""
+    cap_ms = bash_cap_ms(environ)
+    if cap_ms is None:
         return WAIT_DEFAULT
     seconds = min(WAIT_CEILING, cap_ms // 1000 - WAIT_HEADROOM)
     return seconds if seconds > 0 else WAIT_DEFAULT
 
 
+def wait_timeout_line(environ=None) -> str:
+    """The line after every `next:` line that names a `wait`: the `timeout`
+    the session's Bash call for that wait takes — the cap (`bash_cap_ms`),
+    or BASH_TOOL_MAX_MS where none is set. Since 0.10.39, 12 of 221 stage
+    waits passed 600000 on a host that allows 3600000, ran past it and were
+    moved to the background (AIWF-132's review)."""
+    return f"timeout: {bash_cap_ms(environ) or BASH_TOOL_MAX_MS}"
+
+
 def _ended_lines(code: int, slice_dir: Path) -> list[str]:
     """What an ended run leaves for the session: the exit, and by it where a
-    halt stopped, or a stop's reason with the document to register — or,
-    for an error, the record to diagnose from."""
+    halt stopped, or a stop's reason with the document to register and an
+    `attach:` line per file it carries — or, for an error, the record to
+    diagnose from."""
     lines = [f"ended: exit {code}"]
     if code == EXIT_HALTED:
         halts = (_read_json(slice_dir / "state.json") or {}).get("halts") or []
@@ -13570,6 +13701,8 @@ def _ended_lines(code: int, slice_dir: Path) -> list[str]:
                  + (f" (P{bail['phase']})" if bail.get("phase") else ""))
     if bail.get("document"):
         lines.append(f"document: {bail['document']}")
+    lines += [f"attach: {os.path.abspath(slice_dir / rel)}"
+              for rel in bail.get("attach") or () if isinstance(rel, str)]
     lines.append(f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}")
     return lines
 
@@ -13594,7 +13727,7 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     `running`, with the step the driver's state file holds active and how
     long it has run in it (`running: P4 code, 12m`,
     pilot_progress.active_summary; bare where no step is active), and the
-    wait to re-arm (5), `ended(record, slice_dir)`'s lines
+    wait to re-arm with its `timeout:` line (5), `ended(record, slice_dir)`'s lines
     for the exit recorded in `state_name` (0), or `gone` and the relaunch
     with `relaunch`'s flags (6). Liveness is the flock, never the pid.
 
@@ -13636,7 +13769,7 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
         stands = pilot_progress.active_summary(state.get("progress"))
         code, lines = WAIT_RUNNING, [
             f"running: {stands}" if stands else "running",
-            f"next: python3 {script} wait {where}"]
+            f"next: python3 {script} wait {where}", wait_timeout_line()]
     elif record is not None:
         code, lines = 0, ended(record, slice_dir)
     else:

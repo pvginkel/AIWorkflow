@@ -63,7 +63,8 @@ last phase), `test_fixer_rounds` (the test-fixer's rounds the run has dispatched
 write, after `bailout.json`; cleared when a `--resume` starts, so a run that is not running and
 has none was killed from outside), `bailouts` (every stop this run made — `reason`, `phase`,
 `question`, `ts`, the `run_phase` it stopped in, its `details` clipped to 600 characters and
-the `document` an operator question rendered, or `null` — kept here because `bailout.json` is
+the `document` an operator question rendered, or `null`, and its `attach`, the renders a
+writer's question attached, slice-relative, `[]` where none — kept here because `bailout.json` is
 unlinked on resume; the resume that follows a stop writes it
 into the close-out report as an event and marks the row `reported`, so each stop is entered
 once however often the run resumes), `halts` (every stop at Pilot's halt file — `at`, where the
@@ -250,7 +251,7 @@ close-out.
 ## bailout.json and exit codes
 
 ```json
-{"reason": "<enum>", "phase": "<id|null>", "details": "…", "consult": "<path|null>", "question": false, "document": "<path|null>", "ts": "…"}
+{"reason": "<enum>", "phase": "<id|null>", "details": "…", "consult": "<path|null>", "question": false, "document": "<path|null>", "attach": ["renders/P3/<name>.png"], "ts": "…"}
 ```
 
 Deleted at the start of every run, so its presence always means *this* run bailed. `question`
@@ -258,7 +259,10 @@ splits the two bail classes: `true` exits 4 (only the operator can move it), `fa
 error the orchestrator diagnoses). A question's `document` is the one the driver rendered before
 it exited, `asks/<n>-<slug>.md` in the slice folder, for the stage to register
 ([run-loop.md](run-loop.md) § Protocol invariants); `null` for an error, or where the document
-could not be written, which the log says.
+could not be written, which the log says. Its `attach` is the image files a code-writer's
+`question` listed under `renders/P<id>/` and the driver kept (a regular file inside that phase's
+folder with an image suffix; the rest is logged and dropped), for the stage to attach to the
+document; `wait` prints each as an `attach:` line.
 
 | Reason | Question? | Raised when |
 |---|:-:|---|

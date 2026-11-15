@@ -82,8 +82,8 @@ takes, `<task>` the brief's plan task, and a tool is
 
 ## The wait, and the run's end
 
-Run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the tool's maximum,
-which its description states; `wait` returns a minute inside that cap, or within nine minutes
+Run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the one the
+`timeout:` line under it names, the tool's maximum; `wait` returns a minute inside that cap, or within nine minutes
 where the host sets none. Its exit code is a signal, and the lines it prints are all there is to read:
 
 - **5, running** — run the new `next:` line again at once. Read nothing in between: no log, no
@@ -95,7 +95,7 @@ where the host sets none. Its exit code is a signal, and the lines it prints are
 | The run's exit | The turn |
 |---|---|
 | **0**, complete | [the close-out](#the-close-out) |
-| **4**, a question | `reason: prerun_action` goes to [the actions owed before the run](#the-actions-owed-before-the-run) first. Otherwise, register the `document:` line's file; attach `plan.md`, and the phase's review where the bail names a phase; commit `asks/`; end the turn. With no `document:` line, put `bailout.json`'s details as a `question` document first. |
+| **4**, a question | `reason: prerun_action` goes to [the actions owed before the run](#the-actions-owed-before-the-run) first. Otherwise, register the `document:` line's file; attach `plan.md`, the phase's review where the bail names a phase, and every file an `attach:` line names; commit `asks/` and those files; end the turn. With no `document:` line, put `bailout.json`'s details as a `question` document first. |
 | **3**, an error, or **1** | [the diagnosis](#an-error) |
 | **7**, halted | end the turn, its last message the `halted:` line |
 | **130**, interrupted | someone stopped the driver: end the turn saying where; a nudge resumes it |

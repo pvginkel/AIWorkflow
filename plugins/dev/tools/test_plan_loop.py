@@ -2081,6 +2081,261 @@ def test_go_with_a_plan_citing_a_scratch_clone_bails():
         assert run_to_exit(ScriptedLoop(slice_dir, [R_GO])) == 0
 
 
+# -- a ruling from a sibling slice (AIWF-169) -----------------------------------
+#
+# Another slice's planning that rules a change to this slice while its loop
+# runs commits it as incoming_rulings.md in this folder: this plan.md is the
+# writer's. The loop folds it into the rulings section before every writer
+# pass, and once more at the end, where one more writer pass takes it in.
+
+INCOMING = ("- Ruling (2026-11-15), from slice 038's planning: the export "
+            "goes through the queue.\n"
+            "  > **AIWF-1 — Export through the queue**\n"
+            "  >\n"
+            "  > The card's description.\n")
+SECOND = INCOMING.replace("038", "041").replace("the queue", "a batch")
+
+
+def folded(*rulings):
+    """PLAN_HEADER with `rulings` at the end of its rulings section."""
+    return PLAN_HEADER.replace(
+        "verbatim.\n\n## Ordering",
+        "verbatim.\n\n" + "\n".join(rulings) + "\n## Ordering")
+
+
+def send(slice_dir, text=INCOMING):
+    """What the sending slice's session leaves: the file, committed — the
+    fake git reports the folder clean."""
+    (Path(slice_dir) / "incoming_rulings.md").write_text(text)
+
+
+def sends(text):
+    return lambda loop: send(loop.slice_dir, text)
+
+
+def sees_plan(seen, then=None):
+    """A done writer pass that keeps what plan.md held when it started, and
+    adds the phases where it had none, its rulings kept."""
+    def effect(loop):
+        seen.append(loop.plan_path.read_text())
+        if "### P1" not in seen[-1]:
+            loop.plan_path.write_text(seen[-1] + PHASE_BLOCK)
+            (loop.slice_dir / "verification.json").write_text('{"items": []}\n')
+        if then is not None:
+            then(loop)
+    return effect
+
+
+def took(seen, then=None):
+    return ("plan-writer", {"outcome": "done", "summary": "w"},
+            sees_plan(seen, then))
+
+
+def rulings_log(slice_dir):
+    return [line.split("] ", 1)[1] for line in
+            (slice_dir / "plan_log.txt").read_text().splitlines()
+            if "[rulings]" in line]
+
+
+def test_a_sibling_slices_ruling_is_folded_in_before_the_first_writer_pass():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        send(slice_dir, "\n  \n" + INCOMING + "\n\n")
+        seen = []
+        loop = ScriptedLoop(slice_dir, [took(seen), R_GO])
+        assert run_to_exit(loop) == 0
+        assert seen == [folded(INCOMING)]
+        assert not (slice_dir / "incoming_rulings.md").exists()
+        rulings = str(loop.slice_dir / "incoming_rulings.md")
+        plan = str(loop.plan_path)
+        assert [c for c in loop.git_calls if c[0] in ("rm", "add", "commit")] \
+            == [("add", str(loop.slice_dir / "close-out.json")),
+                ("commit", "-m", "slice 099: close-out report"),
+                ("rm", "-q", "--", rulings), ("add", "--", plan),
+                ("commit", "-m", "slice 099: fold 1 ruling from slice 038 "
+                 "into plan.md's rulings", "--", rulings, plan)]
+        state = load_state(slice_dir)
+        [row] = state["folded_rulings"]
+        assert row == {"ts": row["ts"], "commit": "sha123", "rulings": 1,
+                       "from": ["038"], "before": "plan-writer r1"}
+        assert "fold_pass" not in state
+        assert rulings_log(slice_dir) == [
+            "[rulings] incoming_rulings.md folded into plan.md's rulings "
+            "section before plan-writer r1: 1 ruling from slice 038 — commit "
+            "sha123"]
+        assert [s[0] for s in loop.spawned] == ["plan-writer", "plan-reviewer"]
+
+
+def test_a_sibling_slices_ruling_is_folded_in_before_the_fix_pass():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        assert quiet(ScriptedLoop(slice_dir, [W_DONE, R_ISSUES]))[0] == 4
+        send(slice_dir)
+        seen = []
+        loop = ScriptedLoop(slice_dir, [took(seen)])
+        assert run_to_exit(loop) == 0
+        assert seen == [folded(INCOMING) + PHASE_BLOCK]
+        assert loop.spawned == [("plan-writer", 2, "done")]
+        assert loop.prompts[0][1].startswith(
+            "The operator has ruled on the plan-reviewer's findings")
+        assert [r["before"] for r in load_state(slice_dir)["folded_rulings"]] \
+            == ["plan-writer r2"]
+
+
+def test_a_ruling_folded_in_at_the_end_takes_one_more_writer_pass_then_done():
+    """The review is behind the plan: the fold sends it through one fix
+    pass, unreviewed, and back to done; a file arriving during that pass
+    takes another, and none after it takes none."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        seen = []
+        loop = ScriptedLoop(slice_dir, [
+            W_DONE, (*R_GO, sends(INCOMING)),
+            took(seen, then=sends(SECOND)), took(seen)])
+        assert run_to_exit(loop) == 0
+        assert loop.spawned == [("plan-writer", 1, "done"),
+                                ("plan-reviewer", 1, "go"),
+                                ("plan-writer", 2, "done"),
+                                ("plan-writer", 3, "done")]
+        assert seen == [folded(INCOMING) + PHASE_BLOCK,
+                        folded(INCOMING, SECOND) + PHASE_BLOCK]
+        prompt = loop.prompts[2][1]
+        assert prompt.startswith(
+            "Rulings another slice's planning sent were folded into the "
+            "rulings section\nof slice 099_test_slice's plan.md after its "
+            "review. Slice folder: ")
+        assert "plan_review_r1.md" in prompt
+        state = load_state(slice_dir)
+        assert (state["phase"], state["review_rounds"],
+                 state["exit"]["code"]) == ("done", 1, 0)
+        assert "fold_pass" not in state
+        assert [(r["before"], r["from"]) for r in state["folded_rulings"]] \
+            == [("exit", ["038"]), ("exit", ["041"])]
+        assert {s["code"]: s.get("why") for s in state["progress"]}[
+            "write-2"] == "Follows 1 ruling from slice 038, folded in after " \
+                          "the review"
+        assert rulings_log(slice_dir).count(
+            "[rulings] folded after the review — one more plan-writer fix "
+            "pass takes them in, unreviewed") == 2
+
+
+def test_a_heading_in_the_incoming_rulings_bails_naming_the_file_and_line():
+    """A fenced block's `#` is no heading; one outside it is refused before
+    anything is written. A plan without the rulings section is refused
+    too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        send(slice_dir, "```\n# a shell comment\n```\n" + INCOMING
+             + "\n## From slice 038's planning\n")
+        loop = ScriptedLoop(slice_dir, [])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert bail["reason"] == "protocol_failure"
+        assert bail["details"].startswith(
+            f"{loop.slice_dir / 'incoming_rulings.md'} holds a Markdown "
+            "heading on line 9: `## From slice 038's planning` — ")
+        assert (slice_dir / "plan.md").read_text() == PLAN_HEADER
+        assert (slice_dir / "incoming_rulings.md").exists()
+        assert not [c for c in loop.git_calls if c[0] == "rm"]
+        assert load_state(slice_dir)["writer_rounds"] == 0
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        (slice_dir / "plan.md").write_text(
+            PLAN_HEADER.replace("## Requirements / rulings", "## Rulings"))
+        send(slice_dir)
+        loop = ScriptedLoop(slice_dir, [])
+        assert run_to_exit(loop) == 3
+        bail = json.loads((slice_dir / "plan_bailout.json").read_text())
+        assert (bail["reason"], bail["details"]) == (
+            "protocol_failure",
+            f"{loop.plan_path} has no `## Requirements / rulings` section for "
+            f"{loop.slice_dir / 'incoming_rulings.md'} to fold into — "
+            "restore it and rerun")
+
+
+def test_an_empty_incoming_rulings_is_deleted_and_committed_folding_nothing():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        send(slice_dir, "\n\n")
+        seen = []
+        loop = ScriptedLoop(slice_dir, [took(seen), R_GO])
+        assert run_to_exit(loop) == 0
+        assert seen == [PLAN_HEADER]
+        rulings = str(loop.slice_dir / "incoming_rulings.md")
+        assert ("commit", "-m", "slice 099: drop an empty incoming_rulings.md",
+                "--", rulings) in loop.git_calls
+        assert not [c for c in loop.git_calls
+                    if c[:2] == ("add", "--")]
+        assert rulings_log(slice_dir) == [
+            "[rulings] incoming_rulings.md is empty — deleted, nothing folded "
+            "— commit sha123"]
+
+
+def test_an_uncommitted_incoming_rulings_is_left_and_trips_no_cleanliness_check():
+    """A file its sender is still writing is neither the loop's to commit
+    nor its writer's work left uncommitted: the start passes it by, and so
+    does every check after a dispatch (`_slice_dirty_paths`)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        send(slice_dir)
+        loop = DirtyGitLoop(slice_dir, [W_DONE, R_GO],
+                            porcelain="?? specs/099/incoming_rulings.md\0")
+        assert loop._slice_dirty_paths() == []
+        assert run_to_exit(loop) == 0
+        assert (slice_dir / "incoming_rulings.md").read_text() == INCOMING
+        assert not [c for c in loop.git_calls if c[0] == "rm"]
+        assert "folded_rulings" not in load_state(slice_dir)
+        assert rulings_log(slice_dir) == [
+            "[rulings] incoming_rulings.md is untracked — left alone this "
+            "time: the loop folds only a file its sender committed"] * 2
+        loop.porcelain = " M specs/099/incoming_rulings.md\0"
+        loop.state = load_state(slice_dir)
+        assert loop._fold_incoming("exit") is None
+        assert rulings_log(slice_dir)[-1].startswith(
+            "[rulings] incoming_rulings.md has uncommitted changes (M) — ")
+
+
+class RealGitLoop(ScriptedLoop):
+    """ScriptedLoop on the real git of the spec repo the test made."""
+
+    def git(self, *args):
+        self.git_calls.append(args)
+        return PlanLoop.git(self, *args)
+
+
+def test_the_folds_commit_holds_the_file_and_the_plan_alone():
+    """The spec tree is shared: what another session staged there stays
+    staged, out of the fold's commit."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        specs = Path(tmp) / "specs"
+        slice_dir = make_slice(specs)
+        plan_loop.init_report(slice_dir)
+        send(slice_dir)
+        sh(specs, "init", "-q", "-b", "main")
+        sh(specs, "add", "-A")
+        sh(specs, "commit", "-qm", "init")
+        (specs / "theirs.md").write_text("another session's\n")
+        sh(specs, "add", "--", "theirs.md")
+        seen = []
+        loop = RealGitLoop(slice_dir, [took(seen), R_GO])
+        loop._push_spec = lambda: None
+        assert run_to_exit(loop) == 0
+        assert seen == [folded(INCOMING)]
+        assert sh(specs, "log", "-1", "--format=%s") == (
+            "slice 099: fold 1 ruling from slice 038 into plan.md's rulings")
+        assert sh(specs, "show", "--name-status", "--format=",
+                  "HEAD").splitlines() == [
+            "D\t099_test_slice/incoming_rulings.md",
+            "M\t099_test_slice/plan.md"]
+        assert sh(specs, "show", "HEAD:099_test_slice/plan.md") == \
+            folded(INCOMING).rstrip("\n")
+        assert sh(specs, "diff", "--cached", "--name-only") == "theirs.md"
+        assert load_state(slice_dir)["folded_rulings"][0]["commit"] == \
+            sh(specs, "rev-parse", "HEAD")
+
+
 # -- the other slices' push holds, the reviewer's alone ------------------------
 #
 # A scratch clone is one per repo, shared by every slice that targets it: the
@@ -2412,7 +2667,8 @@ def test_wait_re_arms_while_the_loop_runs_and_relaunches_one_gone():
             os.close(fd)
         assert code == run_loop.WAIT_RUNNING
         assert out.splitlines() == [
-            "running", f"next: python3 {plan_loop.SCRIPT} wait {where}"]
+            "running", f"next: python3 {plan_loop.SCRIPT} wait {where}",
+            run_loop.wait_timeout_line()]
         code, out, _ = wait(slice_dir)
         assert code == run_loop.WAIT_KILLED
         assert out.splitlines() == [
@@ -2445,7 +2701,8 @@ def test_wait_running_names_the_pass_and_the_time_in_it():
         assert out.splitlines() == [
             "running: write r2, 3m",
             f"next: python3 {plan_loop.SCRIPT} wait "
-            f"{os.path.abspath(slice_dir)}"]
+            f"{os.path.abspath(slice_dir)}",
+            run_loop.wait_timeout_line(env)]
 
 
 def test_wait_with_no_for_waits_the_run_loops_default():
@@ -2459,6 +2716,46 @@ def test_wait_with_no_for_waits_the_run_loops_default():
         finally:
             os.close(fd)
         assert code == run_loop.WAIT_RUNNING
+
+
+def test_the_wait_line_is_followed_by_the_bash_calls_timeout():
+    """The line after `next: … wait` is the Bash call's timeout — the cap
+    this environment sets, the tool's 600000 without one — and a relaunch
+    gets none (AIWF-132's review)."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PILOT_TOKEN", "PILOT_MCP_URL", "BASH_MAX_TIMEOUT_MS")}
+    for cap, said in (("3600000", "timeout: 3600000"),
+                      (None, "timeout: 600000")):
+        environ = dict(env, **({} if cap is None
+                               else {"BASH_MAX_TIMEOUT_MS": cap}))
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = plan_record(tmp)
+            where = os.path.abspath(slice_dir)
+            with patched(os, environ=environ):
+                fd = os.open(slice_dir / "plan.lock", os.O_RDWR | os.O_CREAT,
+                             0o644)
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                try:
+                    _, out, _ = wait(slice_dir)
+                finally:
+                    os.close(fd)
+                assert out.splitlines()[1:] == [
+                    f"next: python3 {plan_loop.SCRIPT} wait {where}", said]
+                _, out, _ = wait(slice_dir)
+                assert out.splitlines()[-1] == (
+                    f"next: python3 {plan_loop.SCRIPT} run {where} --detach")
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = make_slice(tmp)
+            with patched(os, environ=environ), \
+                    patched(run_loop, detach=lambda body, log: (4242, 0, "")):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    plan_loop.cmd_run(type("Args", (), {
+                        "slice_dir": str(slice_dir), "verbose": False,
+                        "step": None, "detach": True})())
+            assert out.getvalue().splitlines()[-2:] == [
+                f"next: python3 {plan_loop.SCRIPT} wait "
+                f"{os.path.abspath(slice_dir)}", said]
 
 
 def test_run_detach_names_the_plan_loops_own_stop_and_wait():
@@ -2475,6 +2772,7 @@ def test_run_detach_names_the_plan_loops_own_stop_and_wait():
                             "shell; `plan_loop.py stop` interrupts it")
         assert lines[2] == (f"next: python3 {plan_loop.SCRIPT} wait "
                             f"{os.path.abspath(slice_dir)}")
+        assert lines[3:] == [run_loop.wait_timeout_line()]
 
 
 def test_a_detached_plan_loop_runs_through_the_real_handshake():

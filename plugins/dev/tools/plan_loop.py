@@ -75,6 +75,12 @@ present, the loop exits 7 with plan_state.json current, and the rerun once
 it is gone takes the next pass; present at the start, nothing runs. `stop`
 interrupts a running loop as Ctrl-C does.
 
+A ruling another slice's planning sends this one while the loop runs is
+<slice>/incoming_rulings.md, committed by its sender. Before every writer
+pass, and once more at the end, the loop moves its text to the end of
+plan.md's rulings section, deletes it and commits both by name; a fold at
+the end takes one more writer pass, unreviewed, as the fix pass is.
+
 Usage:
     plan_loop.py run <slice-dir> [--step ID] [--spec-push] [--detach] [--verbose]
     plan_loop.py wait <slice-dir> [--for SECONDS]
@@ -234,6 +240,19 @@ FINDING_CLASSES = ("blocking", "operator")
 # another repository as `github:<owner>/<Repo>`.
 SCRATCH_MARKS = ("/work/scratch", "../scratch/")
 
+# A ruling another slice's planning sends this slice while its loop runs
+# (AIWF-169): the sender commits it here by name, never into plan.md, which
+# is this loop's writer's, and the loop folds it into plan.md's rulings
+# section (`_fold_incoming`). What the fold reads: a Markdown heading, which
+# the file may not hold; a code fence, which hides one; the rulings
+# section's heading, as the digest's DIGEST_SECTIONS prefix reads it; and
+# the slice a ruling's bullet names as its sender.
+INCOMING_RULINGS = "incoming_rulings.md"
+MD_HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+RULINGS_HEADING_RE = re.compile(r"^## +requirements\b", re.I)
+RULING_FROM_RE = re.compile(r"\bfrom slice (\d{3,})\b", re.I)
+
 
 def is_gap(finding: dict) -> bool:
     """Whether a review finding is a gap: a `blocking` one that says its
@@ -282,6 +301,82 @@ def scratch_details(lead: str, hits: list[tuple[int, str]]) -> str:
     return (f"{lead} — another repository is cited as "
             "`github:<owner>/<Repo>`, never by a `/work/scratch` or "
             "`../scratch/` path:\n" + _cited_lines(hits))
+
+
+def unfenced(lines: list[str]) -> list[bool]:
+    """Per line, whether it stands outside a fenced code block; a fence's
+    own lines are inside it. A fence closes on a run of its own character
+    at least as long as the one that opened it, alone on its line."""
+    out: list[bool] = []
+    fence: str | None = None
+    for line in lines:
+        match = FENCE_RE.match(line)
+        if fence is None:
+            if match:
+                fence = match.group(1)
+            out.append(match is None)
+            continue
+        out.append(False)
+        if (match and match.group(1)[0] == fence[0]
+                and len(match.group(1)) >= len(fence)
+                and line.strip() == match.group(1)):
+            fence = None
+    return out
+
+
+def incoming_rulings(text: str) -> tuple[str, tuple[int, str] | None, int,
+                                         list[str]]:
+    """What the fold takes from an incoming_rulings.md: its text, stripped
+    of leading and trailing blank lines; its first heading outside a fenced
+    block, as (1-based line number, the line), or None; how many rulings it
+    holds, its top-level `- ` bullets outside a fence; and the slices those
+    bullets say they come from, each once, in the order named."""
+    lines = text.splitlines()
+    outside = unfenced(lines)
+    heading = next(((n + 1, line) for n, line in enumerate(lines)
+                    if outside[n] and MD_HEADING_RE.match(line)), None)
+    bullets = [line for n, line in enumerate(lines)
+               if outside[n] and line.startswith("- ")]
+    senders: list[str] = []
+    for line in bullets:
+        for number in RULING_FROM_RE.findall(line):
+            if number not in senders:
+                senders.append(number)
+    kept = [n for n, line in enumerate(lines) if line.strip()]
+    body = "\n".join(lines[kept[0]:kept[-1] + 1]) if kept else ""
+    return body, heading, len(bullets), senders
+
+
+def fold_into_rulings(plan: str, rulings: str) -> str | None:
+    """`plan` with `rulings` at the end of its `## Requirements / rulings`
+    section as it stands: after the section's last non-blank line, a blank
+    line between, and before the heading that ends it — the next heading
+    at `###` or above outside a fence (run_loop.SECTION_HEADING_RE), where
+    the digest stops reading the section too. None for a plan without the
+    section."""
+    lines = plan.splitlines()
+    outside = unfenced(lines)
+    start = next((n for n, line in enumerate(lines)
+                  if outside[n] and RULINGS_HEADING_RE.match(line)), None)
+    if start is None:
+        return None
+    end = next((n for n in range(start + 1, len(lines))
+                if outside[n] and run_loop.SECTION_HEADING_RE.match(lines[n])),
+               len(lines))
+    last = max(n for n in range(start, end) if lines[n].strip())
+    tail = lines[end:]
+    return "\n".join(lines[:last + 1] + [""] + rulings.splitlines()
+                     + ([""] + tail if tail else [])) + "\n"
+
+
+def rulings_said(count: int, senders: list[str]) -> str:
+    """`2 rulings from slices 038, 041` — a fold's take, for its log line,
+    its commit and `status`."""
+    said = f"{count} ruling{'' if count == 1 else 's'}"
+    if senders:
+        said += (f" from slice{'s' if len(senders) > 1 else ''} "
+                 + ", ".join(senders))
+    return said
 
 
 class Bailout(Exception):
@@ -415,6 +510,11 @@ The operator has ruled on the plan-reviewer's findings on slice
 FIX_OPENING_GAPS = """\
 The plan-reviewer's findings on slice {slice_name}'s plan are gaps that
 need no ruling: they come to you without going to the operator."""
+# The pass after rulings another slice's planning sent were folded in once
+# the review was behind the plan (plan_state.json's `fold_pass`).
+FIX_OPENING_FOLDED = """\
+Rulings another slice's planning sent were folded into the rulings section
+of slice {slice_name}'s plan.md after its review."""
 
 WRITER_RESUME_NOTE = """\
 An earlier pass paused on the questions in {questions_file}; plan.md's
@@ -657,7 +757,10 @@ class PlanLoop:
         return bool(self._slice_dirty_paths())
 
     def _slice_dirty_paths(self) -> list[str]:
-        """Changed paths under the slice dir, excluding the loop's own files.
+        """Changed paths under the slice dir, excluding the loop's own files
+        and an incoming_rulings.md: its sender commits it, and one another
+        session is still writing is neither this loop's work nor its
+        writer's (`_fold_incoming` leaves it until it is committed).
 
         Uses -z so paths carrying spaces or quotes parse exactly; a rename or
         copy entry is followed by its origin path, which is consumed and
@@ -674,7 +777,8 @@ class PlanLoop:
             status, path = entry[:2], entry[3:]
             if status[0] in ("R", "C"):
                 i += 1  # skip the origin path of a rename/copy
-            if PurePosixPath(path).name not in LOOP_OWNED_FILES | RENDERED_FILES:
+            if PurePosixPath(path).name not in (LOOP_OWNED_FILES | RENDERED_FILES
+                                                | {INCOMING_RULINGS}):
                 dirty.append(path)
         return dirty
 
@@ -951,6 +1055,85 @@ class PlanLoop:
                      session_id, duration_s)
         return verdict
 
+    # -- a ruling from a sibling slice (AIWF-169) ------------------------------
+
+    def _fold_incoming(self, before: str) -> dict | None:
+        """Fold <slice>/incoming_rulings.md, where its sender committed it,
+        into the end of plan.md's rulings section (`fold_into_rulings`),
+        delete it, and commit the two by name — `git rm` of the file, the
+        plan added, a commit of those paths alone, so nothing another
+        session staged in the shared tree rides along — then push. An
+        untracked or modified file is a session still writing it: left this
+        time, logged. An empty one is deleted and committed, nothing folded.
+        A heading in the file, or a plan without the section, bails before
+        anything is written. Each fold is a row of plan_state.json's
+        `folded_rulings`; `before` names what it came before — the next
+        writer pass, or the exit. The row, when rulings were folded."""
+        path = self.slice_dir / INCOMING_RULINGS
+        if not path.exists():
+            return None
+        status = self.git("status", "--porcelain", "-z", "--ignored",
+                          "--untracked-files=all", "--", str(path))
+        if status:
+            how = {"??": "is untracked", "!!": "is ignored by git"}.get(
+                status[:2], f"has uncommitted changes ({status[:2].strip()})")
+            self.log(f"[rulings] {INCOMING_RULINGS} {how} — left alone this "
+                     "time: the loop folds only a file its sender committed")
+            return None
+        try:
+            text = path.read_text(encoding="utf-8")
+            plan = self.plan_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            raise Bailout("protocol_failure",
+                          details=f"{path} could not be folded: {e}") from None
+        rulings, heading, count, senders = incoming_rulings(text)
+        if heading is not None:
+            raise Bailout(
+                "protocol_failure",
+                details=f"{path} holds a Markdown heading on line "
+                        f"{heading[0]}: `{heading[1].strip()}` — its text "
+                        "joins plan.md's rulings section as it stands, and a "
+                        "heading breaks the plan's sections. Its rulings are "
+                        "bullets, a card quoted under its bullet as a "
+                        "blockquote indented two spaces: rewrite it, commit "
+                        "it and rerun")
+        folded = fold_into_rulings(plan, rulings) if rulings else plan
+        if folded is None:
+            raise Bailout(
+                "protocol_failure",
+                details=f"{self.plan_path} has no `## Requirements / rulings` "
+                        f"section for {path} to fold into — restore it and "
+                        "rerun")
+        self._assert_on_base()
+        paths = [str(path)]
+        if rulings:
+            self.plan_path.write_text(folded, encoding="utf-8")
+            paths.append(str(self.plan_path))
+        path.unlink()
+        self.git("rm", "-q", "--", str(path))
+        if rulings:
+            self.git("add", "--", str(self.plan_path))
+        said = rulings_said(count, senders)
+        self.git("commit", "-m",
+                 f"slice {self.slice_num}: fold {said} into plan.md's rulings"
+                 if rulings else
+                 f"slice {self.slice_num}: drop an empty {INCOMING_RULINGS}",
+                 "--", *paths)
+        sha = self.git("rev-parse", "HEAD")
+        row = {"ts": _now_iso(), "commit": sha, "rulings": count,
+               "from": senders, "before": before}
+        self.state.setdefault("folded_rulings", []).append(row)
+        self._save_state()
+        if rulings:
+            self.log(f"[rulings] {INCOMING_RULINGS} folded into plan.md's "
+                     f"rulings section before {before}: {said} — commit "
+                     f"{sha[:12]}")
+        else:
+            self.log(f"[rulings] {INCOMING_RULINGS} is empty — deleted, "
+                     f"nothing folded — commit {sha[:12]}")
+        self._push_spec()
+        return row if rulings else None
+
     # -- passes --------------------------------------------------------------
 
     def _writer_paths(self) -> tuple[int, Path, Path]:
@@ -961,6 +1144,10 @@ class PlanLoop:
                 self.slice_dir / f"plan_questions_r{w}.json")
 
     def _writer_pass(self, initial: bool) -> None:
+        # A sibling's ruling joins plan.md before the pass reads it — past
+        # the halt check, before the round is drawn: a fold that bails
+        # spends none.
+        self._fold_incoming(f"plan-writer r{self.state['writer_rounds'] + 1}")
         w, verdict_path, questions_path = self._writer_paths()
         self._progress_start("write", w, STEP_LABELS["write"])
         if initial:
@@ -977,6 +1164,8 @@ class PlanLoop:
             # its review went to the operator whole.
             opening = (FIX_OPENING_RULED if self.state.get("review_ruled", True)
                        else FIX_OPENING_GAPS)
+            if self.state.get("fold_pass"):
+                opening = FIX_OPENING_FOLDED
             prompt = WRITER_FIX_PROMPT.format(
                 opening=opening.format(slice_name=self.slice_name),
                 slice_name=self.slice_name, slice_dir=self.slice_dir,
@@ -1005,6 +1194,7 @@ class PlanLoop:
         # the plan — no confirming review, the operator's read follows.
         self.state.update(pending_questions=None,
                           phase="reviewing" if initial else "done")
+        self.state.pop("fold_pass", None)
         self._save_state()
         self._check_scratch(w)
 
@@ -1586,7 +1776,20 @@ class PlanLoop:
                 elif phase == "reviewing":
                     self._review_round()
                 elif phase == "done":
-                    break
+                    # A sibling's ruling once the review is behind the plan:
+                    # one more writer pass takes it in, unreviewed, as the
+                    # fix pass after a ruled review is, and back to done —
+                    # folding again only a file that arrived since.
+                    row = self._fold_incoming("exit")
+                    if row is None:
+                        break
+                    self.log("[rulings] folded after the review — one more "
+                             "plan-writer fix pass takes them in, unreviewed")
+                    self._why_next(
+                        f"Follows {rulings_said(row['rulings'], row['from'])}"
+                        ", folded in after the review")
+                    self.state.update(phase="fixing", fold_pass=True)
+                    self._save_state()
                 else:
                     raise Bailout("protocol_failure",
                                   details=f"unknown phase {phase!r}")
@@ -1709,6 +1912,11 @@ def cmd_status(args) -> None:
     print(f"  {driver_line(state.get('driver'), slice_dir / 'plan.lock')}")
     if isinstance(state.get("spec_unpushed"), dict):
         print(f"  {spec_unpushed_line(state['spec_unpushed'])}")
+    for row in state.get("folded_rulings") or []:
+        print(f"  {row.get('ts')}  folded "
+              f"{rulings_said(row.get('rulings', 0), row.get('from') or [])} "
+              f"before {row.get('before')} — commit "
+              f"{str(row.get('commit'))[:12]}")
     if state.get("pending_questions"):
         print(f"  questions pending: {state['pending_questions']}")
     elif state.get("pending_review") and state["phase"] != "done":

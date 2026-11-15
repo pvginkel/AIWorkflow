@@ -103,7 +103,7 @@ for you.
 Write the verdict file named in your dispatch, with your debrief as its `debrief`:
 
 ```json
-{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}], "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick", "debrief": "your debrief"}
+{"outcome": "done | question | blocked", "summary": "1-3 sentences", "refuted": [{"id": "F2", "evidence": "review-fix rounds only: a blocking finding you witnessed as unable to fail — one line, what you ran or wrote"}], "options": [{"label": "question only, optional", "line": "what it means or costs"}], "recommend": "the label you would pick", "renders": ["question only, optional: renders/P3/<name>.png"], "debrief": "your debrief"}
 ```
 
 - `done` — implemented, gated, committed, done-record appended.
@@ -111,5 +111,8 @@ Write the verdict file named in your dispatch, with your debrief as its `debrief
   pauses on it, and the summary is the ask the operator reads). Where the answer is a pick
   between alternatives, give them as `options` — two or more, each a short label and a line —
   and the one you would pick as `recommend`; the question then reaches the operator as a
-  decision. Leave both out for an open question.
+  decision. Leave both out for an open question. Where the operator is to see something before
+  it lands — a ruling that a change is shown in a render first — save the images under the slice
+  folder's `renders/P<id>/` (this phase's id) and list them in `renders`, relative to the slice
+  folder: they are attached to the question's document.
 - `blocked` — an environmental or premise problem you must not work around.

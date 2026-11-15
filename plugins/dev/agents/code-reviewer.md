@@ -54,7 +54,12 @@ reviewed like any other.
    - `contradiction` — a requirement-to-code contradiction, cited by path and quoted line against
      the plan or the acceptance criteria;
    - `coverage-gap` — a named acceptance criterion the diff leaves uncovered, or covers only
-     vacuously: a mutation you ran that the criterion's test survives.
+     vacuously: a mutation you ran that the criterion's test survives; or an existing test the
+     diff rewrote or removed so that a behaviour it checked, which no plan line changes, is no
+     longer checked — an assertion dropped or loosened, a case deleted, an expectation moved to
+     match the new output. Name the test and the behaviour. A test that follows a behaviour the
+     plan changes is not one. Such a rewrite is blocking, never advisory: a red gate's fix that
+     weakens a test passes every gate after it.
 
    No anchor (`none`) means the finding is advisory by construction, whatever its severity.
    Readability, taste, hypothetical performance, and unspecified edge cases can never anchor —

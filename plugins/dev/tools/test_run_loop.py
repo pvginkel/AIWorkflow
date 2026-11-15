@@ -620,6 +620,11 @@ class ScriptedLoop(RunLoop):
         self.doc_gate_calls.append(green)
         log_path = self.slice_dir / f"doc_gate_r{ds['gate_runs']}.log"
         log_path.write_text("doc gate output\n")
+        if green == "timeout":
+            # as the real `_doc_gate_cmd` stops on a command past the cap
+            raise run_loop.Bailout(
+                "timeout", details="doc-phase gate `kc project test` exceeded "
+                                   f"{run_loop.GATE_TIMEOUT}s (output in {log_path})")
         self._record(None, "doc-gate", ds["gate_runs"],
                      "green" if green else "red", "", None, 0)
         return green, log_path
@@ -12089,6 +12094,80 @@ def test_a_primary_gate_red_with_and_without_goes_to_the_writers_nudge():
                                        "on two runs and without them")
 
 
+def test_a_primary_gate_timed_out_once_and_green_on_its_rerun_lands_the_wrap_up():
+    """Slice 038 (AIWF-176): the doc gate with the wrap-up's commits ran
+    `kc project test` past GATE_TIMEOUT, and the wrap-up was left out on
+    that one run. A timeout there is a red: the same tree is gated once
+    more, and a green there lands the wrap-up."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))],
+                         doc_gates=["timeout", True])
+        assert run_to_exit(r) == 0
+        assert not (slice_dir / "bailout.json").exists()
+        # timed out, then green on the same branch — no run without its
+        # commits, and the gate stage ran no third
+        assert r.doc_gate_calls == ["timeout", True]
+        assert r.fake_git.refs[str(repo)]["main"] == "w1"
+        assert r.fake_git.refs[str(sib)]["main"] == "sw1"
+        state = load_state(slice_dir)
+        assert state["wrap_up"]["outcome"] == "landed"
+        assert not left_out_event(slice_dir)
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("[wrap-up] doc gate #1 timed out — doc-phase gate `kc project "
+                f"test` exceeded {run_loop.GATE_TIMEOUT}s (output in "
+                f"{slice_dir / 'doc_gate_r1.log'})") in narration
+        assert ("[wrap-up] the doc gate timed out with its commits — once "
+                "more on the same tree before they are left out") in narration
+        assert "the doc gate is red with its commits" not in narration
+        assert ("[wrap-up] the doc gate is green with its commits on its "
+                "re-run — they land") in narration
+        assert (f"[doc-phase] gate: the wrap-up stage's run on w1 stands — "
+                f"GREEN ({slice_dir / 'doc_gate_r2.log'})") in narration
+
+
+def test_a_primary_gate_timed_out_twice_goes_to_the_run_without_its_commits():
+    """Timed out on both runs with its commits, the wrap-up goes on as two
+    reds do: once more without them, which tells whose red it is."""
+    with tempfile.TemporaryDirectory() as tmp:
+        r, slice_dir, *_ = left_out_run(
+            tmp, lambda repo, sib: (WRAP_DONE, wrap_up_fixes(repo, sib)),
+            "the doc gate timed out with its commits on two runs and is green "
+            "without them", "done", doc_gates=["timeout", "timeout", True])
+        assert r.doc_gate_calls == ["timeout", "timeout", True]
+        narration = (slice_dir / "log.txt").read_text()
+        assert ("[wrap-up] the doc gate timed out with its commits on two "
+                f"runs — once more on {DOCS} without them") in narration
+        assert (f"(output in {slice_dir / 'doc_gate_r2.log'})"
+                in load_state(slice_dir)["wrap_up"]["reason"])
+    # a timeout and a red, either way round, say which was which; red
+    # without them too, that red is the doc phase's, for the writer
+    for gates, said in (
+            (["timeout", False], "timed out with its commits, then was red on "
+                                 "its re-run, and is red without them"),
+            ([False, "timeout"], "was red with its commits, then timed out on "
+                                 "its re-run, and is red without them")):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir, repo, sib = sibling_phase_slice(tmp)
+            plant_waiting(slice_dir)
+            r = ScriptedLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                             wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))],
+                             doc_gates=[*gates, False, True])
+            nudges = []
+            r._nudge = (lambda prompt, cwd, sid, label, role, _n=nudges:
+                        _n.append((sid, role, prompt)))
+            assert run_to_exit(r) == 0
+            assert r.doc_gate_calls == [*gates, False, True]
+            assert [(sid, role) for sid, role, _ in nudges] == \
+                [("sess-test", "doc-writer")]
+            wu = load_state(slice_dir)["wrap_up"]
+            assert wu["outcome"] == "left_out"
+            assert wu["reason"].startswith(f"the doc gate {said} — that red "
+                                           "is the doc phase's"), wu["reason"]
+
+
 def test_a_project_without_a_doc_phase_runs_the_wrap_up_and_lands_it():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp, config=rc(doc=False))
@@ -14291,6 +14370,122 @@ def test_a_question_whose_document_cannot_be_written_still_stops():
         assert json.loads((slice_dir / "bailout.json").read_text())["document"] is None
         assert "the question's document was not written: no" in \
             (slice_dir / "log.txt").read_text()
+
+
+def test_question_renders_keeps_the_phases_images_and_drops_the_rest():
+    """AIWF-167: what a question's verdict lists in `renders` goes with its
+    document only where it is an image file of the phase's own folder."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = Path(tmp) / "slices" / "074_x"
+        mine, other = slice_dir / "renders" / "P3", slice_dir / "renders" / "P2"
+        mine.mkdir(parents=True)
+        other.mkdir(parents=True)
+        for path in (mine / "before.png", mine / "After.SVG",
+                     mine / "notes.txt", other / "p2.png",
+                     Path(tmp) / "outside.png"):
+            path.write_text("x")
+        (mine / "folder.png").mkdir()
+        (mine / "escape.png").symlink_to(Path(tmp) / "outside.png")
+        (mine / "alias.png").symlink_to(mine / "before.png")
+        kept, dropped = run_loop.question_renders(slice_dir, "3", [
+            "renders/P3/before.png", "renders/P3/After.SVG",
+            "renders/P3/../P3/before.png", "renders/P3/alias.png",
+            "renders/P3/notes.txt", "renders/P2/p2.png",
+            "renders/P3/missing.png", "renders/P3/folder.png",
+            "renders/P3/../../../../outside.png", "renders/P3/escape.png",
+            str(Path(tmp) / "outside.png"), 7, " "])
+        assert kept == ["renders/P3/before.png", "renders/P3/After.SVG"]
+        assert dropped == [
+            "renders/P3/notes.txt: not an image",
+            "renders/P2/p2.png: not inside renders/P3/",
+            "renders/P3/missing.png: no such file",
+            "renders/P3/folder.png: not a regular file",
+            "renders/P3/../../../../outside.png: not inside renders/P3/",
+            "renders/P3/escape.png: not inside renders/P3/",
+            f"{Path(tmp) / 'outside.png'}: not inside renders/P3/",
+            "7: not a path", "' ': not a path"]
+        assert run_loop.question_renders(slice_dir, "3", None) == ([], [])
+        assert run_loop.question_renders(slice_dir, "3", []) == ([], [])
+        assert run_loop.question_renders(
+            slice_dir, "3", "renders/P3/before.png") == (
+            [], ["'renders/P3/before.png': `renders` is not a list"])
+
+
+def test_a_writers_question_attaches_its_renders_to_its_document():
+    """The renders kept go into bailout.json and the bail's row as
+    `attach`, the document's ask names them, `wait` prints a line per file
+    after `document:`, and the ones dropped are in the log."""
+    verdict = {"outcome": "question", "summary": "Ship the new header?",
+               "options": ["Ship it", "Keep the old one"],
+               "recommend": "Ship it",
+               "renders": ["renders/P1/before.png", "renders/P1/after.webp",
+                           "renders/P2/elsewhere.png", "renders/P1/gone.png"]}
+
+    def draw(loop):
+        for name in ("P1/before.png", "P1/after.webp", "P2/elsewhere.png"):
+            path = loop.slice_dir / "renders" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"\x89PNG")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", verdict, draw)],
+                         repo_root=repo)
+        assert run_to_exit(r) == 4
+        kept = ["renders/P1/before.png", "renders/P1/after.webp"]
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["attach"] == kept
+        assert bail["document"] and bail["reason"] == "operator_question"
+        assert load_state(slice_dir)["bailouts"][-1]["attach"] == kept
+        doc = Path(bail["document"]).read_text()
+        assert ("Ship the new header?\n\nOpen the renders attached to this "
+                "document before you answer: `renders/P1/before.png` and "
+                "`renders/P1/after.webp`.") in doc
+        assert "```decision id=D1\n" in doc
+        log = (slice_dir / "log.txt").read_text()
+        assert ("[P1] a render the question lists is not attached — "
+                "renders/P2/elsewhere.png: not inside renders/P1/") in log
+        assert ("[P1] a render the question lists is not attached — "
+                "renders/P1/gone.png: no such file") in log
+        assert ("[P1] the question attaches 2 render(s): "
+                "renders/P1/before.png, renders/P1/after.webp") in log
+        assert run_loop._ended_lines(4, slice_dir) == [
+            "ended: exit 4", "reason: operator_question (P1)",
+            f"document: {bail['document']}",
+            f"attach: {os.path.abspath(slice_dir / kept[0])}",
+            f"attach: {os.path.abspath(slice_dir / kept[1])}",
+            f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}"]
+    # one render is said in the singular; none leaves the body as it was
+    assert run_loop.renders_sentence(["renders/P1/a.png"]) == (
+        "Open the render attached to this document before you answer: "
+        "`renders/P1/a.png`.")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [("code-writer", dict(
+            verdict, renders=["renders/P1/gone.png"]))], repo_root=repo)
+        assert run_to_exit(r) == 4
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["attach"] == []
+        assert "Open the render" not in Path(bail["document"]).read_text()
+        assert not [ln for ln in run_loop._ended_lines(4, slice_dir)
+                    if ln.startswith("attach:")]
+
+
+def test_the_doc_writers_question_attaches_no_renders():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        (slice_dir / "renders" / "P1").mkdir(parents=True)
+        (slice_dir / "renders" / "P1" / "a.png").write_bytes(b"x")
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_signoff"], V["consult_complete"],
+            V["test_clean"],
+            ("doc-writer", {"outcome": "question", "summary": "Which page?",
+                            "renders": ["renders/P1/a.png"]})],
+            repo_root=repo)
+        assert run_to_exit(r) == 4
+        bail = json.loads((slice_dir / "bailout.json").read_text())
+        assert bail["phase"] is None and bail["attach"] == []
+        assert "Open the render" not in Path(bail["document"]).read_text()
 
 
 def _git_in(cwd, *args):
@@ -17366,6 +17561,21 @@ def test_wait_answers_0_with_the_exit_and_the_document():
             "ended: exit 4", "reason: operator_question (P3)",
             "document: /specs/slices/075_waited/asks/1-run-question.md",
             f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}"]
+    # the renders the document carries, a line each after it (AIWF-167)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(
+            tmp, state={"run_phase": "phases", "exit": {"code": 4, "ts": "t"}},
+            bail={"reason": "operator_question", "phase": "3",
+                  "question": True, "details": "which header?",
+                  "document": "/specs/slices/075_waited/asks/1-run-question.md",
+                  "attach": ["renders/P3/a.png", "renders/P3/b.svg"]})
+        code, out, _ = wait(slice_dir)
+        assert (code, out.splitlines()) == (0, [
+            "ended: exit 4", "reason: operator_question (P3)",
+            "document: /specs/slices/075_waited/asks/1-run-question.md",
+            f"attach: {os.path.abspath(slice_dir / 'renders/P3/a.png')}",
+            f"attach: {os.path.abspath(slice_dir / 'renders/P3/b.svg')}",
+            f"bailout: {os.path.abspath(slice_dir / 'bailout.json')}"])
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = run_record(
             tmp, state={"exit": {"code": 3, "ts": "t"}},
@@ -17392,7 +17602,8 @@ def test_wait_answers_5_with_the_wait_to_re_arm_and_nothing_else():
         assert code == run_loop.WAIT_RUNNING == 5
         assert out.splitlines() == [
             "running", f"next: python3 {run_loop.SCRIPT} wait "
-                       f"{os.path.abspath(slice_dir)}"]
+                       f"{os.path.abspath(slice_dir)}",
+            run_loop.wait_timeout_line()]
 
 
 def test_wait_running_names_the_phase_the_step_and_the_time_in_it():
@@ -17419,7 +17630,8 @@ def test_wait_running_names_the_phase_the_step_and_the_time_in_it():
             assert code == run_loop.WAIT_RUNNING
             assert out.splitlines() == [
                 line, f"next: python3 {run_loop.SCRIPT} wait "
-                      f"{os.path.abspath(slice_dir)}"], step
+                      f"{os.path.abspath(slice_dir)}",
+                run_loop.wait_timeout_line()], step
 
 
 def test_wait_answers_6_for_a_driver_gone_without_an_exit_record():
@@ -17471,6 +17683,52 @@ def test_wait_sizes_its_default_a_minute_under_the_bash_tools_cap():
     # not a whole number of milliseconds, or nothing left under the cap
     for cap in ("", "an hour", "3.6e6", "3600000ms", "60999", "0", "-1"):
         assert default(cap) == 540, cap
+
+
+def test_every_next_wait_line_is_followed_by_the_bash_calls_timeout():
+    """AIWF-132's review: since 0.10.39, 12 of 221 stage waits passed
+    `timeout: 600000` on a host that allows 3600000, ran past it and were
+    moved to the background. The line after a `next:` that names a wait is
+    the timeout to pass: the cap where one is set, the tool's ten minutes
+    otherwise; a relaunch gets none."""
+    def line(cap=None):
+        return run_loop.wait_timeout_line(
+            {} if cap is None else {"BASH_MAX_TIMEOUT_MS": cap})
+
+    assert line("3600000") == "timeout: 3600000"
+    assert line(" 1200000\n") == "timeout: 1200000"
+    assert line() == "timeout: 600000"
+    for cap in ("", "an hour", "3.6e6", "0", "-1"):
+        assert line(cap) == "timeout: 600000", cap
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PILOT_TOKEN", "PILOT_MCP_URL")}
+    for cap, said in (("3600000", "timeout: 3600000"),
+                      (None, "timeout: 600000")):
+        environ = {k: v for k, v in env.items() if k != "BASH_MAX_TIMEOUT_MS"}
+        if cap is not None:
+            environ["BASH_MAX_TIMEOUT_MS"] = cap
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = run_record(tmp, state=RUNNING_STATE)
+            where = os.path.abspath(slice_dir)
+            with patched(os, environ=environ):
+                with holding(slice_dir):
+                    code, out, _ = wait(slice_dir)
+                assert (code, out.splitlines()) == (run_loop.WAIT_RUNNING, [
+                    "running", f"next: python3 {run_loop.SCRIPT} wait {where}",
+                    said])
+                code, out, _ = wait(slice_dir)
+                assert code == run_loop.WAIT_KILLED
+                assert out.splitlines() == [
+                    "gone: the driver left no exit record",
+                    f"next: python3 {run_loop.SCRIPT} run {where} "
+                    "--resume --detach"]
+                loop = type("Loop", (), {"log_path": slice_dir / "log.txt"})()
+                printed = io.StringIO()
+                with patched(run_loop, detach=lambda body, log: (4242, 0, "")), \
+                        contextlib.redirect_stdout(printed):
+                    run_loop.run_detached(loop, slice_dir)
+                assert printed.getvalue().splitlines()[-2:] == [
+                    f"next: python3 {run_loop.SCRIPT} wait {where}", said]
 
 
 def test_wait_with_no_for_waits_the_default_this_environment_gives():
@@ -17643,7 +17901,7 @@ def test_wait_says_and_exits_the_same_with_pilot_there_failing_or_absent():
             return 0, ["ended: exit 0"]
         if kind == "running":
             return 5, ["running", f"next: python3 {run_loop.SCRIPT} wait "
-                                  f"{where}"]
+                                  f"{where}", run_loop.wait_timeout_line()]
         return 6, ["gone: the driver left no exit record",
                    f"next: python3 {run_loop.SCRIPT} run {where} "
                    "--resume --detach"]
@@ -18420,8 +18678,9 @@ def test_run_detach_prints_the_pid_and_the_wait_to_follow():
             run_loop.run_detached(loop, slice_dir)
         lines = out.getvalue().splitlines()
         assert "pid 4242" in lines[0]
-        assert lines[-1] == (f"next: python3 {run_loop.SCRIPT} wait "
-                             f"{os.path.abspath(slice_dir)}")
+        assert lines[-2:] == [f"next: python3 {run_loop.SCRIPT} wait "
+                              f"{os.path.abspath(slice_dir)}",
+                              run_loop.wait_timeout_line()]
         err = io.StringIO()
         with patched(run_loop, detach=lambda body, log: (None, 2, "Error: x\n")), \
                 contextlib.redirect_stderr(err):

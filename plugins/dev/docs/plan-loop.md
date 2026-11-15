@@ -120,6 +120,21 @@ every commit of its own the loop asserts the tree is still on it and bails `bloc
 no run moves the shared tree ([run-loop.md](run-loop.md) § The plan is the queue), so that is a
 hand checkout. A plan that already parses with phases (a reset re-plan) enters at review.
 
+**A ruling from a sibling slice is folded in, never edited in.** Another slice's planning that
+rules a change to this slice while this one is being planned writes it into
+`incoming_rulings.md` in this folder, committed by name (`/dev:plan-slice`, *A ruling that
+changes another slice*): an edit of this `plan.md` would race this loop's writer. Before every
+writer pass, and once more before exit 0, the loop moves the file's text to the end of `plan.md`'s
+`## Requirements / rulings` as it stands, deletes the file, commits the two paths alone and logs
+what it took; `plan_state.json`'s `folded_rulings` keeps a row per fold, which `status` prints.
+A fold at the end, after the review, is followed by one writer pass that takes the rulings in,
+unreviewed, as the fix pass after a ruled review is (`fold_pass` while it is owed). Only a file
+its sender committed is folded: one untracked or modified is a session still writing it, left
+for the next fold, and the loop's checks that the slice folder is committed pass it by. An empty
+file is deleted with nothing folded. A file that holds a heading would break the plan's
+sections, and so does a plan without that section: each is a `protocol_failure` naming it. A file
+that lands after the last fold is the promotion's to find (`/dev:plan-slice`).
+
 **A plan cites no scratch clone.** After every writer pass that completes the plan, and again at
 GO, the loop scans `plan.md` for `/work/scratch` and `../scratch/`. It skips the done phases,
 whose done-records record the run's own scratch work. A scratch clone belongs to the environment

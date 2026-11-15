@@ -77,8 +77,8 @@ Refused (exit 2) because another plan loop holds `plan.lock`, the loop is live: 
 `plan_loop.py wait <slice>`. Refused because the slice's run loop holds `run.lock`, re-planning
 would rewrite the queue it executes: that is an `action` document as in the start's step 2.
 
-**Wait**: run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the tool's
-maximum, which its description states; `wait` returns a minute inside that cap, or within nine
+**Wait**: run the `next:` line's `wait` in the foreground, the Bash call's `timeout` the one
+the `timeout:` line under it names, the tool's maximum; `wait` returns a minute inside that cap, or within nine
 minutes where the host sets none. Its exit code is a signal, and the lines it prints are all there is to read:
 
 - **5, running** — run the new `next:` line again at once. Read nothing in between.
@@ -131,18 +131,31 @@ rides into every round. Two readings beside pilot.md's:
 - **A note that asks back is answered**, under `/dev:writing` § A question back, in a new
   document that puts the ask again.
 
-**A ruling that sends a card to another slice** also writes the card into that slice's
-`slice.md`, whatever the document asked, and in the same commit that lands the ruling in
-`plan.md`. The roles of a run have no tracker access, so a move the tracker alone records reaches
-none of them. Append, at the end of that `slice.md`, a heading of its own,
-`## <ID>, from slice <NNN>'s planning`, with one line under it naming the ruling: this slice's
-`plan.md` line and the ruling's date. Then append the card as the tracker holds it, quoted as
-`/dev:triage` quotes one: its `### <ID> — <title>` heading, then its marks, description and
-comments as one blockquote, `> ` on every line and `>` alone on a blank one. The slice that
-takes the card is one `close_out.py fold` would fold into: another slice still to run, a
-`<number>_*` folder in `slices/` or `slices/backlog/`, and still unplanned. A planned or running
-slice never reads `slice.md` again, and a slice not filed yet has none. Either way the ruling is
-not carried out as ruled, and it comes back as an ask, as below.
+**A ruling that changes another slice** — sends it a card, or changes what it is to build — is
+written where that slice still reads, whatever the document asked, in the same commit that lands
+the ruling in `plan.md`. The roles of a run have no tracker access, so a move the tracker alone
+records reaches none of them. By where that slice stands:
+
+- **Being planned**: its folder holds a `plan_state.json` whose `phase` is not `done`, whatever
+  its `plan.md` holds. Its plan loop runs or waits on its own document, and its `plan.md` is its
+  writer's: an edit there races it. Append to `incoming_rulings.md` in its folder, creating it,
+  one bullet, `- Ruling (<date>), from slice <NNN>'s planning: <the ruling, in the operator's
+  words>`, naming this slice's `plan.md` line, with a card it sends quoted under it as a
+  blockquote indented two spaces, its first line `> **<ID> — <title>**`, then its marks,
+  description and comments. No heading: the file's text joins that plan's rulings section as it
+  stands, and its loop folds it in before its next writer pass (plan-loop.md, *A ruling from a
+  sibling slice*).
+- **Still unplanned**: one `close_out.py fold` would fold into, a `<number>_*` folder in
+  `slices/` or `slices/backlog/` still to run, with no phase in its `plan.md`. Append, at the end
+  of its `slice.md`, a heading of its own, `## <ID>, from slice <NNN>'s planning` (`## From slice
+  <NNN>'s planning` for a ruling with no card), with one line under it naming the ruling: this
+  slice's `plan.md` line and the ruling's date. Then the ruling in the operator's words, and the
+  card as the tracker holds it, quoted as `/dev:triage` quotes one: its `### <ID> — <title>`
+  heading, then its marks, description and comments as one blockquote, `> ` on every line and
+  `>` alone on a blank one.
+- **Planned, running or not filed yet**: a planned or running slice reads neither file again,
+  and a slice not filed yet has no folder. The ruling is not carried out as ruled, and it comes
+  back as an ask, as below.
 
 By what the document asked:
 
@@ -191,9 +204,12 @@ that builds the repo replaces it with the real manifest.
 
 At exit 0, in this order:
 
-1. `run_loop.py run <slice> --dry-run` — the plan parses, every `Target:` resolves, the gates
+1. An `incoming_rulings.md` in the folder came after the loop's last fold: relaunch the loop and
+   wait, as [the loop](#the-loop) does. It folds the file and takes one writer pass, and its exit
+   0 brings you back here.
+2. `run_loop.py run <slice> --dry-run` — the plan parses, every `Target:` resolves, the gates
    print. A failure is [diagnosed](#an-error) as a bail is.
-2. **Your debrief.** `debrief.py input <slice> --stage plan` prints the loop's ask of you, every
+3. **Your debrief.** `debrief.py input <slice> --stage plan` prints the loop's ask of you, every
    debrief its agents gave, the preparer's first, in order, and the plan's figures: its rounds,
    its durations and the cost `slice_cost.py` computes for the folder. Read it yourself, not
    through a sub-agent. Then give your own as it asks, on the stdin of `debrief.py give <slice>
@@ -202,12 +218,12 @@ At exit 0, in this order:
    is the file's, never the turn's last message. Only the turn the loop completes in gives one,
    this one: a turn that hands back before the loop completes, on the requirements, a question, an
    error's diagnosis, a halt or a stop, gives none.
-3. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
+4. `git mv <spec-repo>/slices/backlog/<NNN_slug> <spec-repo>/slices/<NNN_slug>`, and commit the
    move with the loop's `plan_state.json`, `plan_debrief.json` and `plan_log.txt`, staged by
    name; drop a stale
    `plan_bailout.json` and the emptied `plan.lock`. The folder is clean after. No document of the
    slice is open at exit 0, so the move is safe (pilot.md § The documents).
-4. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to
+5. A sub-agent brings the tracker in line with the plan. The slice card goes from triaged to
    planned, its highlights matching the plan's scope where planning moved it. Each card
    `grounding.md` names as routed to the slice and still open is closed as the convention closes
    an absorbed task where the plan carries its ask, and is left open with a comment quoting the
@@ -215,7 +231,7 @@ At exit 0, in this order:
    either way: where the plan does not carry its ask, it flips to `Won't Do` with a comment
    quoting why — the ruling, or the premise the grounding found false — as the convention flips
    an absorbed task whose requirement planning rules out.
-5. End the turn, its last message the plan's path and its phases, counted.
+6. End the turn, its last message the plan's path and its phases, counted.
 
 ## The clarification
 

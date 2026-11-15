@@ -4,6 +4,49 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-15 — A sibling's ruling folded into a plan, renders on a question, a timed-out wrap-up gate retried, the wait's timeout named (v0.10.76)
+
+AIWF-169, AIWF-167, AIWF-176's driver half, AIWF-132's review and AIWF-204's fourth ask, from the
+handover AIWF-209.
+
+- **A planning ruling that changes a slice being planned is folded in, never edited in**
+  (AIWF-169). PilotAppSpecs slice 038's plan review sent a change to slice 037 while 037's plan
+  loop ran; editing 037's `plan.md` would have raced its writer, and the only route left held 038
+  on a question about 037. plan-slice's *A ruling that changes another slice* now routes by where
+  the other slice stands: being planned (a `plan_state.json` whose `phase` is not `done`), the
+  ruling goes as a bullet into its `incoming_rulings.md`, committed by name; unplanned, into its
+  `slice.md` as before; planned or running, back as an ask. `plan_loop.py` folds a committed
+  `incoming_rulings.md` into the end of `plan.md`'s rulings section before every writer pass and
+  once more at the end, deletes it and commits the two paths alone (`folded_rulings` in
+  `plan_state.json`, printed by `status`). A fold at the end takes one more writer pass,
+  unreviewed, as the fix pass after a ruled review is. A file still being written is left for the
+  next fold and trips none of the loop's cleanliness checks; a heading in it, which would break
+  the plan's sections, bails `protocol_failure`. The promotion relaunches the loop for a file that
+  lands after its last fold.
+- **A phase's question can carry renders** (AIWF-167). Slice 037 had two rulings to be shown in a
+  render before they landed, and a run's only route was after the merge. The code-writer's
+  `question` verdict takes an optional `renders`, image files under the slice folder's
+  `renders/P<id>/`; the driver keeps those that are regular image files inside that phase's
+  folder, logs the rest, names them in the question's body, and writes them into `bailout.json`
+  and the `bailouts` row as `attach`. `wait` prints an `attach:` line each, and run-slice attaches
+  and commits them with the document. Pilot needed nothing: `attach_file` takes images and its
+  viewer shows them.
+- **A wrap-up whose doc gate timed out is retried once** (AIWF-176, its driver half). Slice 038's
+  wrap-up gate exceeded 3600 s, and a timeout raised past the re-run a red gets (AIWF-143): one
+  run, and five fixes left out. A timeout on the wrap-up branch now counts as a red for that
+  re-run. The sibling repos' wrap-up gates already did. The continuation's route that lands a
+  left-out wrap-up's branch comes with AIWF-171.
+- **A stage's `wait` line is followed by `timeout: <ms>`** (AIWF-132's review), the Bash call's
+  timeout for it, read from `BASH_MAX_TIMEOUT_MS` (600000 where it is unset), and both stage
+  skills point at it. Since 0.10.39, 12 of 221 stage waits passed `timeout: 600000` on a host
+  that allows 3,600,000, ran past it and were moved to the background. The review's count: a run
+  stage's waits fell from at most 67 to at most 23, what is left being 10- to 20-hour runs at
+  one wait about every 55 minutes, which the Bash cap allows no fewer of, so the setting stays.
+- **The code reviewer blocks a test rewrite that drops coverage** (AIWF-204's fourth ask, which
+  does not wait on the gate's move): an existing test rewritten or removed so that a behaviour it
+  checked, which no plan line changes, is no longer checked is a `coverage-gap`, blocking, never
+  advisory.
+
 ## 2026-11-15 — Small edits to the roles: grounding sized to the slice, comments without slice ids, waits at 300 s, the consult's approach checked, the largest phase split (v0.10.75)
 
 AIWF-172, AIWF-174, AIWF-178, AIWF-179, AIWF-180 and P-258's item 5, from the handover AIWF-209.
