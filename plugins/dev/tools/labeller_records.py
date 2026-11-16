@@ -1614,9 +1614,9 @@ class Records:
         """The run records' half of the stamp's inputs (§ The stamp): the rows of every unit
         the tie's labels may name and every unit above them, for an anchor its stages' units
         and their Test Runs, the role, the adopted group, each named slice's state, the Pilot
-        bit and the spec repos (`spec_digest`). `context` is `{"conversation", "transcript", "pilot"}`; where its `pilot`
-        set is not the one the tie was taken under, the tie is taken again under it, in
-        place, so that the caller's tie and these inputs agree."""
+        bit and the spec repos (`spec_digest`). `context` is `{"conversation", "transcript",
+        "pilot"}`; where its `pilot` set is not the one the tie was taken under, the tie is
+        taken again under it, in place, so that the caller's tie and these inputs agree."""
         context = context or {}
         pilot = context.get("pilot")
         if pilot is not None and pilot is not self._pilot:
