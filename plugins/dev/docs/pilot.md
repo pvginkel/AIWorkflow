@@ -189,7 +189,10 @@ follows: "Could not be read: <path>, <path>."
 
 The skill reads each answered document back into its store (`asks.py absorb`, the close-out's
 through `close_out.py`), acts on every ruling as the stage says, into `plan.md`, a card, a fold,
-a fix, a strike or a slice folder, and goes on with the stage. Three readings are fixed:
+a fix, a strike or a slice folder, and goes on with the stage. Each answered document is committed
+by name as Pilot wrote it back, in the commit that lands its rulings, beside its store: it is the
+record of what the operator answered, and a stage's next launch finds the slice folder clean.
+Three readings are fixed:
 
 - **The operator's words travel verbatim.** `answer` and `note` are quoted wherever the ruling is
   restated, never paraphrased or completed.

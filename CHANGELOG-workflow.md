@@ -4,6 +4,20 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — A continuation commits the documents Pilot wrote back with the ruling (v0.10.81)
+
+AIWF-206, from the debrief of IoTSupport slice 001's planning. Its continuation sub-agent
+committed `plan.md` and the store but not the document Pilot had written back. `plan_loop.py`
+refuses a launch over any uncommitted file in the slice folder, so the first relaunch was refused
+until that file was committed.
+
+- **plan-slice § The continuation** now lists what the ruling's commit stages by name. Beside
+  `plan.md`, that is each document Pilot wrote back and the store its `absorb` updated
+  (`asks/<n>-<slug>.md` and `.json`).
+- **pilot.md § The continuation** states the same step once, for every stage that shares it: each
+  answered document is committed by name, as Pilot wrote it back, in the commit that lands its
+  rulings. run-slice reads that section and does not restate it.
+
 ## 2026-11-15 — The run records: every run kept as it goes in the plugin's data folder, every history row says when it began and on what, every gate and sweep kept, a seed for the old slices (v0.10.80)
 
 The workflow's run records batch for the analysis dashboard's labeller (EPIC-12, P-278):
