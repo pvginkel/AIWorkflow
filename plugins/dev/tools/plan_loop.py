@@ -75,9 +75,12 @@ present, the loop exits 7 with plan_state.json current, and the rerun once
 it is gone takes the next pass; present at the start, nothing runs. `stop`
 interrupts a running loop as Ctrl-C does.
 
-A ruling another slice's planning sends this one while the loop runs is
+A ruling another slice's planning sends this one, or an entry another
+slice's close-out folds into it (close_out.py fold), once the preparer has
+seeded plan.md — its requirements still open, or the loop running — is
 <slice>/incoming_rulings.md, committed by its sender. Before every writer
-pass, and once more at the end, the loop moves its text to the end of
+pass, the first one included, and once more at the end, the loop moves its
+text to the end of
 plan.md's rulings section, deletes it and commits both by name; a fold at
 the end takes one more writer pass, unreviewed, as the fix pass is.
 

@@ -51,10 +51,13 @@ the agents and the skills:
                for a card, or for the operator's word on an edit, and take a
                restated entry: the section is the card, or the edit.
   fold         append an entry verbatim — its `show`, quoted, under a line
-               naming the slice, the entry and the report — to the slice.md
-               of the slice still unplanned it is `for` (or `--into`), and
-               stage that file; prints the strike that follows its commit.
-               Writes neither the store nor the report.
+               naming the slice, the entry and the report — to the slice it
+               is `for` (or `--into`): to its slice.md while it is still
+               unplanned; as a bullet to its incoming_rulings.md once its
+               preparer seeded its plan.md (its requirements put, or its
+               plan loop running before its first phase); refused for one
+               planned or running. Stages that file; prints the strike that
+               follows its commit. Writes neither the store nor the report.
   worklist     what waits for the wrap-up, with what is asked of each;
                `--fixes`, what the fixes pass (`run_loop.py fixes`) takes:
                every entry marked `fix now` whose ruling is not carried
@@ -110,8 +113,9 @@ nor this, since a driver's text quotes tool output.
 
 The route is computed at every render, never stored: `route()` reads an
 entry's kind and labels, the repositories the slice touched, and the stage
-of the slice a `for` names (still unplanned, planned or running, or not
-created yet) against the two tables of the contract (§ The routes) — the
+of the slice a `for` names (still unplanned; its plan.md seeded by its
+preparer, with no phase yet; planned or running; or not created yet)
+against the two tables of the contract (§ The routes) — the
 policy is the operator's and lives here only. So do the run loop's triggers
 for what is owed before the push (`owed_before_push()`) and before the test
 phase (`owed_before_test()`), which read the `due` an author set: the live
@@ -2198,20 +2202,50 @@ def settle_criterion(slice_dir: Path | str, vid: str, verdict: str,
 # A phase heading as the run loop's parser reads one (run_loop.PHASE_RE;
 # run_loop imports this file, so it is not imported from there).
 PHASE_RE = re.compile(r"^###\s+P([A-Za-z0-9]+)\s+—\s+(.+?)\s*$")
+# The heading of plan.md's `## Requirements / rulings` section as the plan
+# loop reads it (plan_loop.RULINGS_HEADING_RE; plan_loop imports run_loop,
+# which imports this file, so it is not imported from there). The
+# plan-preparer seeds it.
+RULINGS_HEADING_RE = re.compile(r"^## +requirements\b", re.I)
+# The file a slice's plan loop folds into that section before every writer
+# pass (plan_loop.INCOMING_RULINGS).
+INCOMING_RULINGS = "incoming_rulings.md"
+
+
+def _rulings_heading(plan: str) -> bool:
+    """Whether `plan` holds the rulings section's heading outside a fenced
+    block — a fence opened and closed as plan_loop.unfenced reads one."""
+    fence: str | None = None
+    for line in plan.splitlines():
+        m = _FENCE_LINE_RE.match(line)
+        if fence is None:
+            if m:
+                fence = m.group(1)
+            elif RULINGS_HEADING_RE.match(line):
+                return True
+        elif (m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+              and line.strip() == m.group(1)):
+            fence = None
+    return False
 
 
 def _stage(folder: Path) -> str:
     """`planned` for a slice folder that holds a state.json, or a plan.md
     with a phase heading — its run reads the plan, never slice.md again;
-    `unplanned` otherwise. An unreadable plan.md has no phases."""
+    `planning` for one whose plan.md has no phase heading but holds the
+    rulings heading outside a fence — its preparer seeded it and read
+    slice.md, and its plan loop folds incoming_rulings.md into that section
+    before every writer pass; `unplanned` otherwise, a slice.md alone among
+    them. An unreadable plan.md has no phases and no heading."""
     if (folder / "state.json").exists():
         return "planned"
     try:
         plan = (folder / "plan.md").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return "unplanned"
-    return "planned" if any(PHASE_RE.match(line) for line in plan.splitlines()) \
-        else "unplanned"
+    if any(PHASE_RE.match(line) for line in plan.splitlines()):
+        return "planned"
+    return "planning" if _rulings_heading(plan) else "unplanned"
 
 
 def _slices_root(slice_dir: Path | str) -> Path | None:
@@ -2277,12 +2311,12 @@ def _slice_folders(root: Path) -> list[Path]:
 
 def slice_stages(slice_dir: Path | str) -> dict[int, tuple[str, str]] | None:
     """Number → (folder number as written, stage) of every slice folder
-    under the nearest `slices` ancestor (`_slice_folders`): `planned` or
-    `unplanned` (`_stage`) for one still to run (`_folders_to_run`), `own`
-    for the slice itself, PAST for any other — it has run, or was
-    cancelled. A number no folder holds is not in it: a slice not created
-    yet, which an entry's `for` holds it for. The routes take this map.
-    None without a `slices` ancestor."""
+    under the nearest `slices` ancestor (`_slice_folders`): `planned`,
+    `planning` or `unplanned` (`_stage`) for one still to run
+    (`_folders_to_run`), `own` for the slice itself, PAST for any other —
+    it has run, or was cancelled. A number no folder holds is not in it: a
+    slice not created yet, which an entry's `for` holds it for. The routes
+    take this map. None without a `slices` ancestor."""
     here = Path(slice_dir).resolve()
     to_run = _folders_to_run(here)
     if to_run is None:
@@ -2460,7 +2494,8 @@ def normalise_for(labels: dict, slice_dir: Path | str) -> dict:
     if number not in stages:
         return {**labels, "for": str(number).zfill(_for_width(stages))}
     written, stage = stages[number]
-    return {**labels, "for": written} if stage in ("planned", "unplanned") else labels
+    return ({**labels, "for": written} if stage in ("planned", "planning", "unplanned")
+            else labels)
 
 
 # -- the routes (close-out.md § The routes) ------------------------------------
@@ -2543,13 +2578,14 @@ def _fold(lab: dict) -> tuple[str, str]:
 def _for_route(lab: dict, stages: dict | None) -> tuple[str, str] | None:
     """Where the entry's `for` sends it, at the row the fold sits at, by the
     stage `slice_stages` gives the slice it names: a fold into a slice
-    still unplanned; to the operator for one planned or running, whose run
-    never reads slice.md again; to the operator for one no folder holds,
-    not created yet, to hold for it — Pilot defers it to that slice's task;
-    None — the table's next rows, as if the label were not there —
-    for a slice no longer to run, the slice itself, or a value that names
-    no slice. Without `stages` (no `slices` ancestor, no context given), a
-    fold."""
+    still unplanned, or into one whose plan.md its preparer seeded with no
+    phase yet (`planning`); to the operator for one planned or running,
+    whose run never reads slice.md again; to the operator for one no
+    folder holds, not created yet, to hold for it — Pilot defers it to
+    that slice's task; None — the table's next rows, as if the label were
+    not there — for a slice no longer to run, the slice itself, or a value
+    that names no slice. Without `stages` (no `slices` ancestor, no context
+    given), a fold."""
     target = lab.get("for")
     if not target:
         return None
@@ -2567,7 +2603,7 @@ def _for_route(lab: dict, stages: dict | None) -> tuple[str, str] | None:
         return ("operator:action",
                 f"to you — an action: slice {target} is planned or running and its run "
                 "never reads slice.md; add a phase or rule on its run")
-    if slot[1] == "unplanned":
+    if slot[1] in ("unplanned", "planning"):
         return _fold(lab)
     return None
 
@@ -3632,49 +3668,68 @@ def show_view(slice_dir: Path | str, ids: list[str] | None = None) -> str:
     return "\n\n".join(out) or "no live entries"
 
 
-# -- fold: an entry into a later slice's slice.md ----------------------------------
+# -- fold: an entry into a later slice's slice.md or incoming_rulings.md ----------
 
 FOLD_INTRO = ("Slice {own}'s close-out, entry {eid}, verbatim (`close_out.py show`, "
               "{date}; report `{report}`):")
+# A fold into incoming_rulings.md is a bullet that opens with the same words,
+# from the sender: the plan loop's log names the slice a ruling comes from by
+# them (plan_loop.RULING_FROM_RE).
+FOLD_BULLET = "From s" + FOLD_INTRO[1:]
 FOLD_WIDTH = 100
 # How long staging the fold may take before it is reported as failed.
 GIT_ADD_TIMEOUT = 30
 _BACKTICKED_RE = re.compile(r"`[^`]*`")
 
 
-def _fold_intro(own: str, eid: str, day: str, report: str) -> str:
+def _fold_intro(own: str, eid: str, day: str, report: str, bullet: bool = False) -> str:
     """The paragraph a fold opens with, wrapped at FOLD_WIDTH without
-    breaking a word, a hyphenated name or a backticked span."""
-    text = FOLD_INTRO.format(own=own, eid=eid, date=day, report=report)
+    breaking a word, a hyphenated name or a backticked span; with `bullet`,
+    the bullet of a fold into incoming_rulings.md (FOLD_BULLET), its lines
+    after the first indented two spaces."""
+    text = (FOLD_BULLET if bullet else FOLD_INTRO).format(own=own, eid=eid, date=day,
+                                                          report=report)
     glued = _BACKTICKED_RE.sub(lambda m: m.group(0).replace(" ", "\0"), text)
     return textwrap.fill(glued, width=FOLD_WIDTH, break_long_words=False,
-                         break_on_hyphens=False).replace("\0", " ")
+                         break_on_hyphens=False, initial_indent="- " if bullet else "",
+                         subsequent_indent="  " if bullet else "").replace("\0", " ")
 
 
 def _folded_already(text: str, own: str, eid: str, folder: str) -> bool:
     """Whether `text` holds the intro of a fold of entry `eid` of slice
     `own` — the report the slice folder `folder` holds, wherever in the
     spec tree it stood when it was folded (`slices/` or
-    `slices/completed/`), however the line was wrapped."""
+    `slices/completed/`), however the line was wrapped or indented: a
+    slice.md's (FOLD_INTRO), or an incoming_rulings.md bullet's
+    (FOLD_BULLET), in that file or in the plan.md the plan loop moved it
+    to."""
     flat = " ".join(text.split())
-    return re.search(re.escape(f"Slice {own}'s close-out, entry {eid}, verbatim (")
+    return re.search(r"(?:From s|S)lice "
+                     + re.escape(f"{own}'s close-out, entry {eid}, verbatim (")
                      + r"[^)]*?; report `(?:[^`]*/)?"
                      + re.escape(f"{folder}/{REPORT_NAME}`):"), flat) is not None
 
 
 def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
                date: str | None = None) -> str:
-    """Append entry `eid` verbatim to the slice.md of the slice it is for —
-    its `for` label, or `into` in its place — under the intro FOLD_INTRO
-    gives, as `show` prints it, every line quoted; then stage that file in
-    the spec repo (`git add`, by name). The target is a slice still to run
-    and unplanned: one planned or running never reads slice.md again. The
-    report's own slice, a struck entry, an entry with no target, and a
-    slice.md that holds this fold already are refused, and nothing is
+    """Append entry `eid` verbatim to the slice it is for — its `for`
+    label, or `into` in its place — as `show` prints it, every line quoted;
+    then stage the file it went into in the spec repo (`git add`, by name).
+    For a slice still unplanned, that is its slice.md, under the intro
+    FOLD_INTRO gives. For one whose plan.md its preparer seeded, with no
+    phase yet — its requirements put, or its plan loop running before its
+    first phase — slice.md is read already: the fold is one bullet
+    (FOLD_BULLET) with the quote indented under it, at the end of its
+    incoming_rulings.md, created where there is none, which its plan loop
+    folds into plan.md's rulings section before its next writer pass. One
+    planned or running is refused: its run never reads slice.md again. The
+    report's own slice, a struck entry, an entry with no target, and a fold
+    the target holds already — in slice.md; in incoming_rulings.md, or in
+    the plan.md the plan loop moves it to — are refused, and nothing is
     written. Neither the store nor the report is written — the strike that
     follows the commit is the caller's. Returns what was done and the
     strike to run; a staging that fails is a ReportError that says so, the
-    fold left in slice.md."""
+    fold left in the file."""
     day = _date(date)
     here = Path(slice_dir).resolve()
     with _locked(slice_dir):
@@ -3712,33 +3767,51 @@ def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
             raise ReportError(f"{named}: no other slice still to run has that number "
                               "(a <number>_* folder in slices/ or slices/backlog/)")
         written = re.match(r"(\d+)_", folder.name).group(1)
-        if _stage(folder) == "planned":
+        stage = _stage(folder)
+        if stage == "planned":
             raise ReportError(f"slice {written} is planned or running, and its run never "
                               "reads slice.md again: add a phase or rule on its run — "
                               "nothing was folded")
+        planning = stage == "planning"
         spec_root = root.parent
-        path = folder / "slice.md"
+        path = folder / (INCOMING_RULINGS if planning else "slice.md")
         rel = path.relative_to(spec_root)
         try:
             data = path.read_bytes()
         except FileNotFoundError:
-            raise ReportError(f"{rel} does not exist: slice {written} has no slice.md "
-                              "to fold into — nothing was folded") from None
+            if not planning:
+                raise ReportError(f"{rel} does not exist: slice {written} has no slice.md "
+                                  "to fold into — nothing was folded") from None
+            data = b""
         except OSError as e:
             raise ReportError(f"{rel} is unreadable: {e}") from None
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            raise ReportError(f"{rel} is not UTF-8 — nothing was folded") from None
-        if _folded_already(text, own, eid, here.name):
-            raise ReportError(f"{rel} holds this fold already — slice {own}'s entry "
-                              f"{eid}; nothing was folded")
-        intro = _fold_intro(own, eid, day, str((here / REPORT_NAME).relative_to(spec_root)))
+        held = [(rel, data)]
+        if planning:
+            plan_path = folder / "plan.md"
+            try:
+                held.append((plan_path.relative_to(spec_root), plan_path.read_bytes()))
+            except OSError as e:
+                raise ReportError(f"{plan_path.relative_to(spec_root)} is unreadable: "
+                                  f"{e}") from None
+        for where, raw in held:
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                raise ReportError(f"{where} is not UTF-8 — nothing was folded") from None
+            if _folded_already(text, own, eid, here.name):
+                raise ReportError(f"{where} holds this fold already — slice {own}'s entry "
+                                  f"{eid}; nothing was folded")
+        intro = _fold_intro(own, eid, day, str((here / REPORT_NAME).relative_to(spec_root)),
+                            bullet=planning)
         shown = show_view(slice_dir, [eid]).rstrip("\n").split("\n")
-        quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in shown)
+        # Under a bullet, the quote is indented as its continuation lines are,
+        # and follows its intro with no blank line between.
+        indent, gap = ("  ", "\n") if planning else ("", "\n\n")
+        quoted = "\n".join(f"{indent}> {line}" if line.strip() else f"{indent}>"
+                           for line in shown)
         head = data.rstrip(b"\n")
         path.write_bytes((head + b"\n\n" if head.strip() else b"")
-                         + f"{intro}\n\n{quoted}\n".encode())
+                         + f"{intro}{gap}{quoted}\n".encode())
     strike = (f"close_out.py strike {shlex.quote(str(report_path(slice_dir)))} {eid} "
               f'--reason "folded into slice {written}" --commit <sha> --by <you>')
     add = ["git", "-C", str(spec_root), "add", "--", str(rel)]
@@ -3754,7 +3827,7 @@ def fold_entry(slice_dir: Path | str, eid: str, into: str | None = None,
         failed = str(e)
     if failed:
         raise ReportError(f"folded {eid} into {rel}, but staging it failed — "
-                          f"`{shlex.join(add)}`: {failed}. The fold stays in slice.md, "
+                          f"`{shlex.join(add)}`: {failed}. The fold stays in {path.name}, "
                           f"unstaged: stage it by name, commit it, then: {strike}")
     return f"folded {eid} into {rel} (staged) — commit it, then: {strike}"
 
@@ -4195,8 +4268,11 @@ def build_parser() -> tuple[argparse.ArgumentParser,
                            "edit and the rule; the entry comes to them")
     p.add_argument("--date", help="YYYY-MM-DD; today when omitted")
 
-    p = verb("fold", "append an entry verbatim to the slice.md of the slice still "
-                     "unplanned it is for, and stage it; prints the strike that follows "
+    p = verb("fold", "append an entry verbatim to the slice it is for — to its slice.md "
+                     "while it is still unplanned, as a bullet to its incoming_rulings.md "
+                     "once its preparer seeded its plan.md (its requirements put, or its "
+                     "plan loop running before its first phase); refused for one planned "
+                     "or running — and stage that file; prints the strike that follows "
                      "its commit", entry=True)
     p.add_argument("--into", metavar="SLICE",
                    help="the slice to fold it into, by its number (12, 012 or "

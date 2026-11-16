@@ -448,6 +448,38 @@ def test_a_for_routes_by_the_stage_of_the_slice_it_names_in_both_tables():
                                      PENDING) == FOR_PLANNED
 
 
+def test_a_for_naming_a_slice_its_preparer_seeded_folds_in_both_tables():
+    seeded = {**PENDING, 61: ("061", "planning")}
+    for kind, lab in (("defect", fix_labels(fix="one-edit", area="plain")),
+                      ("improvement", imp_labels())):
+        def at(target, lab=lab, kind=kind):
+            return close_out.table_route(E(kind, labels={**lab, "for": target}), None,
+                                         seeded)
+        assert at("061") == ("wrap-up:fold", "the wrap-up — fold into slice 061")
+        assert at("61")[0] == at("061_seeded")[0] == "wrap-up:fold"
+        assert close_out.route(E(kind, labels={**lab, "for": "061"}), None, seeded) \
+            == at("061")
+    # through append, in a spec tree: written as the folder writes it, asked a fold
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, later=())
+        folder = slice_dir.parent / "backlog" / "061_seeded"
+        folder.mkdir()
+        (folder / "plan.md").write_text(SEEDED_PLAN)
+        assert close_out.normalise_for({"for": "61"}, slice_dir) == {"for": "061"}
+        close_out.init_report(slice_dir)
+        code, out, err = run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "61"}))
+        assert code == 0, err
+        code, out, err = run_cli("append", slice_dir, *with_flags(
+            IMPROVEMENT, **{"for": "061_seeded"}))
+        assert code == 0, err
+        assert [entry_of(slice_dir, eid)["labels"]["for"] for eid in ("B1", "I1")] \
+            == ["061", "061"]
+        assert route_of(slice_dir, "B1") == route_of(slice_dir, "I1") == (
+            "wrap-up:fold", "the wrap-up — fold into slice 061")
+        assert [(e["id"], a) for e, a in close_out.worklist(slice_dir)] == [
+            ("B1", "fold — fold it into slice 061"), ("I1", "fold — fold it into slice 061")]
+
+
 def test_unlabelled_struck_and_the_wrap_ups_marks():
     assert close_out.route(E("defect")) == ("unlabelled",
                                             "none yet — the entry has no labels")
@@ -982,17 +1014,52 @@ def test_slice_stages_carries_each_slice_still_to_run_with_its_stage():
         for name in ("040_seeded", "041_header_only", "042_odd"):
             (root / "backlog" / name).mkdir()
         plan(root / "backlog" / "040_seeded", how="plan")
-        # a header and `###` lines that are no phase heading are no phases
+        # a header and `###` lines that are no phase heading are no phases: the
+        # requirements heading its preparer seeded, and no phase yet
         (root / "backlog" / "041_header_only" / "plan.md").write_text(
             "# Plan\n\n## Requirements\n\n## P1 — not a phase\n### P1 - hyphen\n")
         # a plan.md that cannot be read has no phases
         (root / "backlog" / "042_odd" / "plan.md").mkdir()
         to_run = {n: stage for n, stage in close_out.slice_stages(slice_dir).items()
-                  if stage[1] in ("planned", "unplanned")}
+                  if stage[1] in ("planned", "planning", "unplanned")}
         assert to_run == {
             12: ("012", "unplanned"), 13: ("013", "planned"), 31: ("031", "unplanned"),
-            40: ("040", "planned"), 41: ("041", "unplanned"), 42: ("042", "unplanned")}
+            40: ("040", "planned"), 41: ("041", "planning"), 42: ("042", "unplanned")}
         assert close_out.slice_stages(Path(tmp) / "007_x") is None
+
+
+# A plan.md as the plan-preparer seeds it: the rulings section, and no phase yet.
+SEEDED_PLAN = ("# Slice 061 — the seeded one\n\n## Requirements / rulings\n\n"
+               "- R1: the ask, as slice.md puts it.\n\n## Task shape\n\nOne phase.\n")
+
+
+def test_a_plan_md_its_preparer_seeded_with_no_phase_is_planning():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp, later=())
+        backlog = slice_dir.parent / "backlog"
+        plans = {
+            "061_seeded": SEEDED_PLAN,
+            "062_phased": SEEDED_PLAN + "\n### P1 — the phase\n\nTarget: app\n",
+            "063_no_heading": "# Slice 063\n\n## Task shape\n\nOne phase.\n",
+            "064_fenced": "# Slice 064\n\n````\n## Requirements / rulings\n```\n````\n",
+            "065_run": SEEDED_PLAN,
+            "066_after_a_fence": "# Slice 066\n\n```\nx\n```\n\n## Requirements\n",
+        }
+        for name, text in plans.items():
+            (backlog / name).mkdir()
+            (backlog / name / "slice.md").write_text("the ask\n")
+            (backlog / name / "plan.md").write_text(text)
+        plan(backlog / "065_run")
+        (backlog / "031_in_the_backlog" / "slice.md").write_text("the ask\n")
+        stages = close_out.slice_stages(slice_dir)
+        # seeded, no phase: planning; a phase or a state.json wins: planned
+        assert stages[61] == ("061", "planning")
+        assert stages[66] == ("066", "planning")
+        assert (stages[62], stages[65]) == (("062", "planned"), ("065", "planned"))
+        # no rulings heading, or one only in a fence, and a slice.md alone: unplanned
+        assert stages[63] == ("063", "unplanned")
+        assert stages[64] == ("064", "unplanned")
+        assert stages[31] == ("031", "unplanned")
 
 
 def test_append_takes_a_for_naming_a_planned_slice_and_routes_it_to_the_operator():
@@ -2637,6 +2704,136 @@ def test_fold_intro_wraps_at_100_without_breaking_a_backticked_span():
 def test_fold_is_in_the_verb_block_and_writes_no_store():
     assert close_out.verb_usage("fold").splitlines()[0] == (
         "close_out.py fold <close-out.md> <id> [--into SLICE] [--date DATE]")
+
+
+# -- fold: into the incoming_rulings.md of a slice its preparer seeded ---------------
+
+SEEDED_DIR = "slices/backlog/061_seeded"
+
+
+def _seeded(slice_dir):
+    """Slice 061 in the backlog, its plan.md seeded by its preparer (SEEDED_PLAN),
+    its slice.md read already, the two committed."""
+    folder = slice_dir.parent / "backlog" / "061_seeded"
+    folder.mkdir()
+    (folder / "slice.md").write_text("# Slice 061\n\nthe ask\n")
+    (folder / "plan.md").write_text(SEEDED_PLAN)
+    spec = slice_dir.parent.parent
+    git(spec, "add", ".")
+    git(spec, "commit", "-q", "--no-verify", "-m", "061 seeded")
+    return folder
+
+
+def _bullet(slice_dir, eid, day):
+    """The bullet a fold of `eid` into incoming_rulings.md writes."""
+    intro = close_out._fold_intro("018", eid, day, f"slices/{FOLD_SLICE}/close-out.md",
+                                  bullet=True)
+    return intro + "\n" + "\n".join(f"  > {line}" if line else "  >" for line in
+                                    close_out.show_view(slice_dir, [eid]).split("\n"))
+
+
+def _plan_loop():
+    """plan_loop, loaded as its own suite loads it, for the reader of the file."""
+    spec = importlib.util.spec_from_file_location(
+        "plan_loop", Path(__file__).resolve().parent / "plan_loop.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _plan_loop_folds(folder):
+    """What the plan loop does with a committed incoming_rulings.md before a
+    writer pass: its text into plan.md's rulings section, the file gone."""
+    pl = _plan_loop()
+    incoming = folder / "incoming_rulings.md"
+    body, heading, _, _ = pl.incoming_rulings(incoming.read_text())
+    assert heading is None
+    plan_md = folder / "plan.md"
+    plan_md.write_text(pl.fold_into_rulings(plan_md.read_text(), body))
+    spec = folder.parents[2]
+    git(spec, "rm", "-q", "--", str(incoming))
+    git(spec, "add", "--", str(plan_md))
+    git(spec, "commit", "-q", "--no-verify", "-m", "fold the rulings")
+
+
+def test_fold_into_a_slice_its_preparer_seeded_appends_a_bullet_to_incoming_rulings():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = _fold_repo(tmp)
+        spec = slice_dir.parent.parent
+        folder = _seeded(slice_dir)
+        incoming = folder / "incoming_rulings.md"
+        run_cli("append", slice_dir, *with_flags(PROSE, **{"for": "61"}))        # P1
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "61"}))       # B1
+        files = _files(slice_dir)
+        code, out, err = _fold(slice_dir, "P1", "--date", "2026-10-20")
+        assert code == 0, err
+        report_arg = slice_dir / "close-out.md"
+        assert out == (
+            f"folded P1 into {SEEDED_DIR}/incoming_rulings.md (staged) — commit it, then: "
+            f"close_out.py strike {report_arg} P1 --reason \"folded into slice 061\" "
+            "--commit <sha> --by <you>\n")
+        first = _bullet(slice_dir, "P1", "2026-10-20")
+        assert incoming.read_text() == first + "\n"
+        assert first.startswith(
+            "- From slice 018's close-out, entry P1, verbatim (`close_out.py show`, "
+            "2026-10-20; report\n  `slices/018_dev_and_prd_stages/close-out.md`):\n"
+            "  > ### P1 — design/engine-and-sync.md names the wrong table\n  >\n"
+            "  > line one\n  >\n  > line two\n")
+        assert "> \n" not in incoming.read_text()
+        # slice.md, read already, and plan.md, the loop's, are left alone
+        assert (folder / "slice.md").read_text() == "# Slice 061\n\nthe ask\n"
+        assert (folder / "plan.md").read_text() == SEEDED_PLAN
+        assert _staged(spec) == [f"{SEEDED_DIR}/incoming_rulings.md"]
+        assert _files(slice_dir) == files
+        # a second entry appends a bullet, one blank line between
+        assert _fold(slice_dir, "B1", "--date", "2026-10-21")[0] == 0
+        assert incoming.read_text() == (first + "\n\n" + _bullet(slice_dir, "B1", "2026-10-21")
+                                        + "\n")
+        # the same entry again is refused, nothing written
+        _fold_refused(slice_dir, "P1", [], f"{SEEDED_DIR}/incoming_rulings.md holds this "
+                      "fold already — slice 018's entry P1; nothing was folded")
+        # ...and still once the caller committed it and the plan loop moved its
+        # text into plan.md
+        git(spec, "commit", "-q", "--no-verify", "-m", "the folds")
+        _plan_loop_folds(folder)
+        assert not incoming.exists()
+        _fold_refused(slice_dir, "P1", [], f"{SEEDED_DIR}/plan.md holds this fold "
+                      "already — slice 018's entry P1")
+        _fold_refused(slice_dir, "B1", [], f"{SEEDED_DIR}/plan.md holds this fold already")
+        assert not incoming.exists()
+        # another entry starts the file again
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "61"}))       # B2
+        assert _fold(slice_dir, "B2", "--date", "2026-10-22")[0] == 0
+        assert incoming.read_text() == _bullet(slice_dir, "B2", "2026-10-22") + "\n"
+        # the bullet's intro, wrapped and indented, is the fold; another id, or
+        # another slice's report, is another
+        assert close_out._folded_already(first, "018", "P1", FOLD_SLICE)
+        assert not close_out._folded_already(first, "018", "P2", FOLD_SLICE)
+        assert not close_out._folded_already(first, "019", "P1", "019_other")
+
+
+def test_a_fold_into_incoming_rulings_reads_as_the_plan_loop_reads_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, _ = _fold_repo(tmp)
+        folder = _seeded(slice_dir)
+        # a body with a heading and a fence of its own: quoted, neither is the file's
+        run_cli("append", slice_dir, *with_flags(
+            PROSE, body="line one\n\n## a heading in the body\n\n```\n### P9 — fenced\n```",
+            **{"for": "61"}))                                                    # P1
+        run_cli("append", slice_dir, *with_flags(DEFECT, **{"for": "61"}))       # B1
+        for eid in ("P1", "B1"):
+            assert _fold(slice_dir, eid)[0] == 0
+        pl = _plan_loop()
+        body, heading, count, senders = pl.incoming_rulings(
+            (folder / "incoming_rulings.md").read_text())
+        assert (heading, count, senders) == (None, 2, ["018"])
+        folded = pl.fold_into_rulings(SEEDED_PLAN, body)
+        assert folded == SEEDED_PLAN.replace("\n\n## Task shape",
+                                             "\n\n" + body + "\n\n## Task shape")
+        assert pl.rulings_said(count, senders) == "2 rulings from slice 018"
+        # the plan it leaves is still one its preparer seeded, with no phase
+        (folder / "plan.md").write_text(folded)
+        assert close_out._stage(folder) == "planning"
 
 
 # -- rule, the read-back, close ------------------------------------------------------

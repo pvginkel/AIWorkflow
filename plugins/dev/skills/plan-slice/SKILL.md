@@ -140,16 +140,20 @@ the ruling in `plan.md`. The roles of a run have no tracker access, so a move th
 records reaches none of them. By where that slice stands:
 
 - **Being planned**: its folder holds a `plan_state.json` whose `phase` is not `done`, whatever
-  its `plan.md` holds. Its plan loop runs or waits on its own document, and its `plan.md` is its
-  writer's: an edit there races it. Append to `incoming_rulings.md` in its folder, creating it,
+  its `plan.md` holds, or, before its loop's first run, a `plan.md` with the `## Requirements /
+  rulings` section its preparer seeded and no phase: its requirements are put, and its
+  `slice.md` is read. Its `plan.md` is its own stage's — the writer's, or the continuation's that
+  carries its requirements in — and an edit there races it. Append to `incoming_rulings.md` in
+  its folder, creating it,
   one bullet, `- Ruling (<date>), from slice <NNN>'s planning: <the ruling, in the operator's
   words>`, naming this slice's `plan.md` line, with a card it sends quoted under it as a
   blockquote indented two spaces, its first line `> **<ID> — <title>**`, then its marks,
   description and comments. No heading: the file's text joins that plan's rulings section as it
-  stands, and its loop folds it in before its next writer pass (plan-loop.md, *A ruling from a
-  sibling slice*).
-- **Still unplanned**: one `close_out.py fold` would fold into, a `<number>_*` folder in
-  `slices/` or `slices/backlog/` still to run, with no phase in its `plan.md`. Append, at the end
+  stands, and its loop folds it in before its next writer pass, the first one included
+  (plan-loop.md, *A ruling from a sibling slice*).
+- **Still unplanned**: one `close_out.py fold` would fold into its `slice.md`, a `<number>_*`
+  folder in `slices/` or `slices/backlog/` still to run, with no `plan.md` its preparer
+  seeded. Append, at the end
   of its `slice.md`, a heading of its own, `## <ID>, from slice <NNN>'s planning` (`## From slice
   <NNN>'s planning` for a ruling with no card), with one line under it naming the ruling: this
   slice's `plan.md` line and the ruling's date. Then the ruling in the operator's words, and the

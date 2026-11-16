@@ -16,8 +16,9 @@ whole life, from the plan loop's first append to the continuation's last ruling.
 `${CLAUDE_PLUGIN_ROOT}/tools/close_out.py` is the one pen: it writes every author's entries
 (`append`), notes (`note`) and strikes (`strike`); the corrections of an entry (`amend`), of its
 labels (`relabel`) and of its proposal (`propose`); the section the document shows for an entry
-(`restate`); the wrap-up's marks (`propose --card`, `propose --word`, `note --left`); the fold of an entry into a later slice's `slice.md` (`fold`,
-which stages that file and writes nothing else); the render (`render`); the answers Pilot wrote
+(`restate`); the wrap-up's marks (`propose --card`, `propose --word`, `note --left`); the fold of an entry into a later slice's `slice.md`, or
+its `incoming_rulings.md` once its requirements are put (`fold`, which stages that file and
+writes nothing else); the render (`render`); the answers Pilot wrote
 back (`absorb`), the marks of what the fixes pass makes (`fix-now`) and what was done on them
 (`rule`); the criterion an owed-after action settles
 (`settle`, which writes `verification.json` too); and the close (`close`). It prints an entry in
@@ -282,7 +283,10 @@ An improvement takes the first of these that fits:
 | 5 | is anything else — a product call, a change that needs design or a look first, an addition felt in use | to the operator |
 
 - **A `for` is read against the slice it names, at every render.** Unplanned, the entry folds
-  into its `slice.md`. Planned or running — a `state.json`, or a `plan.md` with a phase
+  into its `slice.md`. With its requirements put — a `plan.md` its preparer seeded with
+  `## Requirements / rulings` and no phase, its `slice.md` read already — the entry folds into
+  its `incoming_rulings.md` as a bullet, which its plan loop moves into that section before the
+  writer's next pass, the first one included ([plan-loop.md](plan-loop.md)). Planned or running — a `state.json`, or a `plan.md` with a phase
   heading, a seeded one in the backlog too — its run never reads `slice.md` again, so the
   entry comes to the operator as an action, to add a phase or rule on that run. No longer
   still to run — it has run since — the entry routes as if it had no `for`. **Not created yet**
@@ -462,7 +466,7 @@ that ruling.
 | an edit within its bar that a rule of the project makes only on the operator's word — a decision record, its `CLAUDE.md` | a request for their word: the entry restated as the exact edit and the rule (`restate`), and the line Agree makes it on (`propose --word`) — the entry comes to the operator; the edit is not made |
 | a trigger or an impact the author could not tell | the label, from the code |
 | an entry without labels | its labels, from its text |
-| input for a slice still unplanned | the entry appended to that slice's `slice.md` (`fold`), and a strike naming the slice |
+| input for a slice still unplanned, or with its requirements put | the entry appended to that slice's `slice.md`, or to its `incoming_rulings.md` (`fold`, § The routes), and a strike naming the slice |
 | a close that rests on one label, on an entry that breaks a flow | that label checked in the code — its trigger, or its signal — and corrected where the code says otherwise |
 | a closed entry that someone other than the wrap-up noted after the table closed it | its labels checked against the note, and corrected where the note shows them wrong (`relabel`), else that it left it, and why (`note --left`) |
 | a risk that comes to the operator | a proposal, where its author gave none or the code says otherwise (`propose`); what the code shows — how it is reached, what a fix takes — in its section (`restate`); what it checked as its mark (`note --left`); the entry stays theirs |
@@ -556,8 +560,9 @@ there is one), which closes the entry, and closes the report.
   `card` ruling is, with no second document, and record it. The pass runs before any card is
   filed, so every card is filed from the section as it stands after it.
 - **`fold into <slice>`** — `close_out.py fold <id> --into <slice>` appends the entry verbatim as
-  an ask to that slice's `slice.md` and stages it; commit it, then record it. It refuses a slice
-  planned or running, whose run never reads `slice.md` again.
+  an ask to that slice's `slice.md`, or to its `incoming_rulings.md` once its requirements are
+  put (§ The routes), and stages it; commit it, then record it. It refuses a slice planned or
+  running, whose run never reads `slice.md` again.
 - **A commit is pushed before it is recorded.** A ruling carried out in a commit is pushed
   first — `git pull --rebase`, then `git push` — and `--did` and `--commit` name the hash it has
   on the upstream: a rebase rewrites a hash recorded before it. `rule --commit` refuses a hash

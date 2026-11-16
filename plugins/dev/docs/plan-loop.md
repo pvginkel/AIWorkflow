@@ -131,8 +131,12 @@ hand checkout. A plan that already parses with phases (a reset re-plan) enters a
 **A ruling from a sibling slice is folded in, never edited in.** Another slice's planning that
 rules a change to this slice while this one is being planned writes it into
 `incoming_rulings.md` in this folder, committed by name (`/dev:plan-slice`, *A ruling that
-changes another slice*): an edit of this `plan.md` would race this loop's writer. Before every
-writer pass, and once more before exit 0, the loop moves the file's text to the end of `plan.md`'s
+changes another slice*), and so does another slice's close-out folding an entry into it
+(`close_out.py fold`, [close-out.md](close-out.md) § The routes): an edit of this `plan.md`
+would race this loop's writer. Being planned starts when the preparer seeds `plan.md`, so the
+file can land while the requirements are still open, before the loop's first run. Before every
+writer pass, the first one included, and once more before exit 0, the loop moves the file's
+text to the end of `plan.md`'s
 `## Requirements / rulings` as it stands, deletes the file, commits the two paths alone and logs
 what it took; `plan_state.json`'s `folded_rulings` keeps a row per fold, which `status` prints.
 A fold at the end, after the review, is followed by one writer pass that takes the rulings in,

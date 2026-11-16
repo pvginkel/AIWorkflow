@@ -4,6 +4,30 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — A ruling folded into a slice whose requirements are open reaches its plan (v0.10.83)
+
+AIWF-211, found by the consistency review after the AIWF-209 handover. A slice has no
+`plan_state.json` before its plan loop's first run, so while its requirements document was open,
+a ruling another slice's planning sent it, or an entry another slice's close-out folded into it,
+was appended to its `slice.md`. Its preparer had already read that file, and nothing carried the
+appended text into `plan.md`'s `## Requirements / rulings`, so the plan could be written past it.
+
+- **`close_out.py`** has a third stage for a slice still to run, `planning`: no `state.json`,
+  and a `plan.md` its preparer seeded with `## Requirements / rulings` and no phase. It routes as
+  `unplanned` does, to the wrap-up's fold. `fold` writes into such a slice's
+  `incoming_rulings.md` rather than its `slice.md`: one bullet naming the sender slice, the entry
+  and the report, with the entry's `show` quoted under it as a blockquote indented two spaces.
+  It refuses a repeat of the fold found in that file, or in `plan.md` after the loop has moved
+  the file's text there.
+- **plan-slice § A ruling that changes another slice** counts a slice as being planned from the
+  moment its preparer seeds `plan.md`, so a sibling's ruling goes to `incoming_rulings.md` there
+  too. The plan loop already folds that file before every writer pass, the first one included.
+  plan-loop.md, close-out.md, close-out-template.md and the wrap-up's table say the same.
+- **Left on their routes, as ruled.** "Requirements open" is read literally. While the preparer
+  is still at work, no `plan.md` is seeded yet, and a fold still lands in `slice.md`, possibly
+  after the preparer has read it. A slice in the backlog whose `plan.md` already has phases stays
+  `planned`, and an entry for it comes to the operator as an action, as before.
+
 ## 2026-11-16 — The plan-writer asks for a fake the testing rules leave to the operator on its first pass (v0.10.82)
 
 AIWF-207, from the debrief of IoTSupport slice 001's planning. Its writer planned P3's proof on
