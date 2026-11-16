@@ -225,7 +225,7 @@ from redact_secrets import RedactionError, is_examined, redact  # noqa: E402
 # ---------------------------------------------------------------------------
 
 MODELS: dict[str, tuple[str, str | None]] = {
-    "code-writer": ("claude-fable-5-2", "high"),
+    "code-writer": ("opus", "xhigh"),
     "code-reviewer": ("opus", "xhigh"),
     "doc-writer": ("opus", "xhigh"),
     "wrap-up": ("opus", "xhigh"),

@@ -4,6 +4,14 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — The code-writer is back on Opus at `xhigh` (v0.10.85)
+
+The operator switched the code-writer's Fable run off again.
+
+- **The code-writer runs `("opus", "xhigh")`.** That is its `MODELS` entry in `run_loop.py`;
+  every other role is unchanged. The next writer dispatched after this release runs Opus, while a
+  loop already running keeps the model it imported.
+
 ## 2026-11-16 — The labeller: the workflow's labels for the analysis dashboard, whole or appended, and the run records it reads (v0.10.84)
 
 AIWF-157, AIWF-189, AIWF-190, AIWF-191, AIWF-192, AIWF-193, AIWF-194, AIWF-195 and AIWF-202, the
