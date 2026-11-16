@@ -40,7 +40,10 @@ resolved to at the last plan load, replaced at every load — a phase that is do
 its `landed` root stands for it; never written by a dry run), `generation` (follow-up generations spent), `test_rounds`, `sweep_runs`,
 `gate_sweep` (the loop-tail sweep's record: per-command `results` with log paths and an
 `outcome` — `green`, `red` or `nothing_ran` (kc's exit 3), with `green` kept beside it; a test
-row that ran also lists the files it kept (`artifacts`), and a red one its single re-run
+row that ran also lists the files it kept (`artifacts`) and the tests its log counted
+(`test_counts`: `{"repo", "component", "tests", "passed"}` per component whose output held a
+runner's count, read with the labeller's `kc_test_counts`; absent where none did, and on a row
+kept before the driver counted them, t17-labeller-2.md D7), and a red one its single re-run
 (`rerun`: `outcome` — `green`, `red`, `nothing_ran`, `unrunnable` or `timeout` — `log`,
 `duration_s`, `artifacts`), which marks it reproduced or flaky and never changes its outcome — the
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and
@@ -133,7 +136,8 @@ where it has no manifest), `gate_projects` (the last gate run, one entry per kc 
 or waived — the Target first, then every other component the phase's diff touches, a root
 phase's from 0.10.52 on — each with its `project`, `cmd` and `outcome`, `green` | `red` |
 `nothing_ran` | `waived` | `covered` (a touched component's verb that root's bare second step
-already ran, not run again), and its `lint` beside it, `cmd` and `outcome` — `green` | `red` |
+already ran, not run again), its `test_counts` where its test's own output counted any (as
+a sweep row's), and its `lint` beside it, `cmd` and `outcome` — `green` | `red` |
 `nothing_ran` | `waived` | `covered` | `accepted`; on a
 spec-repo phase the spec check's entry first, `project` `spec_check`, with no `lint`, then the
 repo's own `kc project test` where it has a manifest; where the phase owes the migration
@@ -263,7 +267,7 @@ Every environment shares the home, so the folder holds every project's slices:
 | `…/gates/P<id>_gate_<n>.json` | every run of the phase's gate, `n` from 1 — the first, the one after a fix round or a `clean` test-fixer, the merge's re-gate: its history row and its log's path |
 | `…/gates/P<id>_regate_<n>.json` | every re-gate of a red by its measurement, the red commands again on the same tree, the same way |
 | `…/gates/P<id>_merge-base_<n>.json` | every run of a red's `kc project` commands on the merge base: the gate-fix `round`, `base_sha`, each command's `outcomes`, `started_at`, `ts`, `duration_s`, `plugin_version` and the `log` |
-| `…/gates/<role>_<n>.json` | the `doc-gate`, `fixes-doc-gate`, `wrap-up-gate` and `fixes-gate` runs, as a phase's gate |
+| `…/gates/<role>_<n>.json` | the `doc-gate`, `fixes-doc-gate`, `wrap-up-gate` and `fixes-gate` runs, as a phase's gate, with `test_counts` over every test it ran, as a sweep row's |
 | `…/sweeps/r<n>.json` | every loop-tail sweep that ran, the record `gate_sweep` holds of the last |
 | `projects/<repo>.json` | a project's file-class rules: `{"repo", "file_classes", "updated_at", "plugin_version"}`, its `.aiworkflowrc`'s `[[file_classes]]` in their order ([project-contract.md](project-contract.md) § File classes), `[]` where it states none; written whole by both loops at their start, so a removed rule reaches the labeller. `<repo>` is the project repository's name, as `<spec-repo>` is the spec repo's |
 | `groups/<SpecRepo>.toml` | the history's groups: the seed's copy of the prototype's `adopted/*.toml` |
@@ -275,7 +279,7 @@ Every environment shares the home, so the folder holds every project's slices:
   reader never sees half of one; a numbered record never replaces another.
 - **`slice.json`.** `{"slice", "card", "title", "plan": {"phases", "acceptance_criteria"},
   "close_out": {"entries", "fixed", "carded", "closed"}, "updated_at", "plugin_version"}`, and the
-  seed's two findings keys below; a key only where its fact is known. Every writer reads the file,
+  seed's two findings keys and `filing_commit` below; a key only where its fact is known. Every writer reads the file,
   puts its own keys over it, keeps the rest, and writes it whole. `card` is the `issue:` line of
   `slice.md`'s front matter as given and unchecked, null where it has none; `title` the text of
   its first `# ` heading. Both loops write them at their start; `plan` the plan loop at its clean
@@ -307,9 +311,13 @@ Every environment shares the home, so the folder holds every project's slices:
   kept them has none), and `code_review_findings`, phase id → round → the `findings` of
   `phases/P<id>/review_result_rN.json` as the reviewer gave them, for each round whose
   code-reviewer row has none (rows carry them since 0.4.3); the keys are strings, the phase id
-  as history rows give it, `{"2": {"1": [...]}}`, and a round with no findings is left out. A fact the folder does not
-  hold is left out, never guessed. It never replaces a record that is there, so a second
-  run adds only what the first could not see. It runs in an environment holding the spec repos,
+  as history rows give it, `{"2": {"1": [...]}}`, and a round with no findings is left out. From
+  the spec repo's history it adds `filing_commit`, `{"hash", "subject", "authored_at"}`: the first
+  commit that added a `slice.md` under the slice's folder, by `git log --no-renames
+  --diff-filter=A`, so a moved folder's first add is its filing (the labeller's R5,
+  [labeller.md](labeller.md) § Work Units). A fact the folder does not hold is left out, never
+  guessed. It never replaces a record that is there, so a second run adds only what the first
+  could not see — and `filing_commit`, alone, to a `slice.json` that has none. It runs in an environment holding the spec repos,
   a checkout or a fresh clone, since a completed slice's state files are committed.
 - **The folder's lifetime**, tried on this home on 2026-11-15: created at its first write, kept
   across plugin updates, and **deleted when the plugin is uninstalled** from its last scope.
