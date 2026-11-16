@@ -533,36 +533,58 @@ def test_plan_review_findings_from_slice_json():
 
 # ---------------------------------------------------------------- the driver's Test Runs
 
-def test_the_driver_test_runs_wait_on_o4():
+def counted(repo, component, tests, passed=True):
+    return {"repo": repo, "component": component, "tests": tests, "passed": passed}
+
+
+def test_the_driver_test_runs_come_of_the_counts_it_kept():
+    """D7: a gate's and a sweep's record gives one Test Run per suite the driver counted; a
+    record kept before the counts gives none."""
     with data_folder() as data:
         d = slice_dir(data)
         write(d / "gates" / "P1_gate_1.json",
               dict(row(6, "gate", 1, "red", "1"), started_at=ts(5, 30),
-                   projects=[{"project": "backend", "cmd": "kc project test", "outcome": "red"},
+                   projects=[{"project": "backend", "cmd": "kc project test", "outcome": "red",
+                              "test_counts": [counted("Foo", "backend", 40, False),
+                                              counted("Foo", "sidecar", 3)]},
                              {"project": "frontend", "outcome": "nothing_ran"},
-                             {"project": "spec_check", "outcome": "green"}]))
+                             {"project": "spec_check", "outcome": "green",
+                              "test_counts": [counted("FooSpecs", "x", 1)]}]))
+        write(d / "gates" / "P1_gate_2.json",     # kept before the counts: no Test Run
+              dict(row(11, "gate", 2, "green", "1"),
+                   projects=[{"project": "backend", "cmd": "kc project test",
+                              "outcome": "green"}]))
+        write(d / "gates" / "doc-gate_1.json",
+              dict(row(46, "doc-gate", 1, "green"), repo="/work/Foo",
+                   test_counts=[counted("Foo", "backend", 41)]))
         write(d / "sweeps" / "r1.json",
               {"run": 1, "ran_at": ts(27), "outcome": "red", "results": [
                   {"repo": "/work/Foo", "component": "backend", "verb": "test",
-                   "outcome": "red", "duration_s": 30},
+                   "outcome": "red", "duration_s": 30,
+                   "test_counts": [counted("Foo", "backend", 41, False)]},
                   {"repo": "/work/Foo", "component": "backend", "verb": "lint",
                    "outcome": "green", "duration_s": 3},
+                  {"repo": "/work/Foo", "component": "sidecar", "verb": "test",
+                   "outcome": "green", "duration_s": 2},
                   {"repo": "/work/Foo", "component": "frontend", "verb": "test",
-                   "outcome": "green", "duration_s": 0, "reused": "P2 gate r1"}]})
+                   "outcome": "green", "duration_s": 0, "reused": "P2 gate r1",
+                   "test_counts": [counted("Foo", "frontend", 9)]}]})
         records, _ = load(data)
-        assert records.test_runs(f"{K}|run") == []
-        runs = records.driver_test_runs(f"{K}|run")
-        assert [(r["work_unit"].split("|", 1)[1], r["suite"], r["passed"]) for r in runs] == [
-            ("run|P1|gate|1", "Foo/backend/test", False),
-            ("run|sweep|1", "Foo/backend/test", False)]
-        assert runs[0]["started_at"] == "2026-11-01T09:05:30.000000Z"
-        assert runs[1]["started_at"] == "2026-11-01T09:26:30.000000Z"
-        assert all(r["tests"] is None for r in runs)
-        lr.DRIVER_TEST_RUNS = True
-        try:
-            assert len(records.test_runs(f"{K}|run")) == 2
-        finally:
-            lr.DRIVER_TEST_RUNS = False
+        runs = records.test_runs(f"{K}|run")
+        assert runs == records.driver_test_runs(f"{K}|run")
+        got = [(r["work_unit"].split("|", 1)[1], r["suite"], r["passed"], r["tests"])
+               for r in runs]
+        assert sorted(got) == sorted([
+            ("run|P1|gate|1", "Foo/backend/test", False, 40),
+            ("run|P1|gate|1", "Foo/sidecar/test", True, 3),
+            ("run|sweep|1", "Foo/backend/test", False, 41),
+            ("run|doc-gate|1", "Foo/backend/test", True, 41)])
+        by = {(r["work_unit"].split("|", 1)[1], r["suite"]): r for r in runs}
+        assert by[("run|P1|gate|1", "Foo/backend/test")]["started_at"] == \
+            "2026-11-01T09:05:30.000000Z"
+        assert by[("run|sweep|1", "Foo/backend/test")]["started_at"] == \
+            "2026-11-01T09:26:30.000000Z"
+        assert all(r["retries_allowed"] is None for r in runs)
 
 
 # ---------------------------------------------------------------- ties

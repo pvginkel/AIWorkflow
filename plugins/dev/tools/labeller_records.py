@@ -38,9 +38,9 @@ _OWN_OUTCOMES = labeller_vocab.UNIT_OUTCOMES
 
 # ---------------------------------------------------------------- the open points' defaults
 
-# O4: the driver's gate and sweep records hold no test count, so no Test Run is handed from
-# them. True hands them with `tests` null.
-DRIVER_TEST_RUNS = False
+# The driver's Test Runs: a gate's and a sweep's record gives one per suite whose test count the
+# driver kept (`test_counts`; t17-labeller-2.md D7, ruled 2026-11-16); one without gives none.
+DRIVER_TEST_RUNS = True
 
 # O6: the triage sessions of old slices stay on no project. True ties every session id that
 # `slice.json`'s `triage_sessions` lists to the slice's `triage` stage, should the seed come
@@ -49,7 +49,7 @@ TRIAGE_SESSIONS = False
 
 # ---------------------------------------------------------------- the records' vocabulary
 
-INDEX_FORMAT = 2            # bump when the blob's content changes shape
+INDEX_FORMAT = 3            # bump when the blob's content changes shape
 MAX_BLOB = 16 * 1024 * 1024
 STAMP_FORMAT = "1"
 STATE_FILES = {"plan_state.json": "plan", "state.json": "run"}
@@ -278,16 +278,28 @@ def _reduce_slice_json(doc: dict) -> dict:
     return out
 
 
+def _reduce_counts(counts) -> list[list]:
+    """A record's `test_counts` (D7): [repo, component, tests, passed] each, where it reads."""
+    out = []
+    for c in counts if isinstance(counts, list) else []:
+        if isinstance(c, dict) and _str(c.get("component")) and _int(c.get("tests")) is not None:
+            out.append([_base(c.get("repo")), _str(c.get("component")), _int(c.get("tests")),
+                        c.get("passed") is True])
+    return out
+
+
 def _reduce_gate(doc: dict) -> dict:
     if not isinstance(doc, dict):
         return {}
     projects = []
     for p in doc.get("projects") or []:
         if isinstance(p, dict):
-            projects.append([_str(p.get("project")), _str(p.get("outcome"))])
+            projects.append([_str(p.get("project")), _str(p.get("outcome")),
+                             _reduce_counts(p.get("test_counts"))])
     return {"ts": _str(doc.get("ts")), "start": _str(doc.get("started_at")),
             "dur": _num(doc.get("duration_s")), "phase": _str(doc.get("phase")),
-            "role": _str(doc.get("role")), "projects": projects}
+            "role": _str(doc.get("role")), "repo": _base(doc.get("repo")), "projects": projects,
+            "counts": _reduce_counts(doc.get("test_counts"))}
 
 
 def _reduce_sweep(doc: dict) -> dict:
@@ -298,7 +310,8 @@ def _reduce_sweep(doc: dict) -> dict:
         if isinstance(r, dict):
             results.append({"repo": _base(r.get("repo")), "component": _str(r.get("component")),
                             "verb": _str(r.get("verb")), "outcome": _str(r.get("outcome")),
-                            "dur": _num(r.get("duration_s")), "reused": bool(r.get("reused"))})
+                            "dur": _num(r.get("duration_s")), "reused": bool(r.get("reused")),
+                            "counts": _reduce_counts(r.get("test_counts"))})
     return {"run": _int(doc.get("run")), "ran_at": _str(doc.get("ran_at")), "results": results}
 
 
@@ -984,8 +997,9 @@ class _Units:
                             outcome=self._outcome(r), started_at=_iso(start), ended_at=_iso(end))
                 self._add(row, st_key)
                 rec = gate_files.get((phase, role, r.get("ts")))
-                if rec is not None and phase is not None:
-                    info = (sl.states["run"].get("phases") or {}).get(phase) or {}
+                if rec is not None:
+                    info = ((sl.states["run"].get("phases") or {}).get(phase) or {}) \
+                        if phase is not None and "run" in sl.states else {}
                     repo = _base(info.get("root")) or _base(info.get("target"))
                     self.test_runs.setdefault(st_key, []).extend(
                         _gate_runs(rec, key, repo, start, end))
@@ -1034,33 +1048,37 @@ class _Units:
         return self.row(key)
 
 
+def _count_runs(counts, key: str, repo: str | None, started, ended) -> list[dict]:
+    """The Test Runs of a record's kept counts (D7): one per suite, `tests` its count."""
+    return [{"work_unit": key, "suite": f"{c_repo or repo}/{component}/test",
+             "passed": passed, "tests": tests, "retries_allowed": None,
+             "started_at": _iso(started), "ended_at": _iso(ended)}
+            for c_repo, component, tests, passed in counts or []]
+
+
 def _sweep_runs(rec: dict, key: str, start, end) -> list[dict]:
-    """A sweep's Test Runs: one per `verb: test` result that ran in the sweep itself."""
+    """A sweep's Test Runs: one per suite a `verb: test` result that ran in the sweep itself
+    counted."""
     out = []
     ended = _epoch(rec.get("ran_at")) or end
     for r in rec.get("results") or []:
         if r.get("verb") != "test" or r.get("outcome") not in ("green", "red") or r.get("reused"):
             continue
         dur = r.get("dur")
-        out.append({"work_unit": key, "suite": f"{r.get('repo')}/{r.get('component')}/test",
-                    "passed": r.get("outcome") == "green", "tests": None,
-                    "retries_allowed": None,
-                    "started_at": _iso(ended - dur if ended is not None and dur is not None
-                                       else start),
-                    "ended_at": _iso(ended)})
+        started = ended - dur if ended is not None and dur is not None else start
+        out.extend(_count_runs(r.get("counts"), key, r.get("repo"), started, ended))
     return out
 
 
 def _gate_runs(rec: dict, key: str, repo: str | None, start, end) -> list[dict]:
-    """A phase gate's Test Runs: one per `projects` entry that ran a component's tests."""
-    out = []
-    for project, outcome in rec.get("projects") or []:
+    """A gate's Test Runs: a phase gate's one per suite a `projects` entry's tests counted, a
+    stage gate's one per suite its record counted."""
+    started, ended = _epoch(rec.get("start")) or start, _epoch(rec.get("ts")) or end
+    out = _count_runs(rec.get("counts"), key, rec.get("repo") or repo, started, ended)
+    for project, outcome, *counts in rec.get("projects") or []:
         if outcome not in ("green", "red") or project in (None, "spec_check", "migration_check"):
             continue
-        out.append({"work_unit": key, "suite": f"{repo}/{project}/test",
-                    "passed": outcome == "green", "tests": None, "retries_allowed": None,
-                    "started_at": _iso(_epoch(rec.get("start")) or start),
-                    "ended_at": _iso(_epoch(rec.get("ts")) or end)})
+        out.extend(_count_runs(counts[0] if counts else None, key, repo, started, ended))
     return out
 
 
@@ -1275,13 +1293,13 @@ class Records:
         return self.unit_rows(units.members.get(stage_key) or [stage_key])
 
     def test_runs(self, stage_key: str) -> list[dict]:
-        """The driver's Test Runs of a stage, which its anchor carries: none while O4 stands."""
+        """The driver's Test Runs of a stage, which its anchor carries (D7)."""
         if not DRIVER_TEST_RUNS:
             return []
         return self.driver_test_runs(stage_key)
 
     def driver_test_runs(self, stage_key: str) -> list[dict]:
-        """The driver's Test Runs of a stage, whatever O4 rules."""
+        """The driver's Test Runs of a stage, whatever `DRIVER_TEST_RUNS` says."""
         units = self._units(stage_key.split("|", 1)[0])
         return [dict(t) for t in (units.test_runs.get(stage_key) or [])] if units else []
 
