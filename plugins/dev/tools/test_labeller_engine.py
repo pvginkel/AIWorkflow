@@ -20,6 +20,7 @@ import json
 import random
 import re
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -634,6 +635,47 @@ def test_a_git_add_all_breaches_only_in_a_spec_repo_the_records_name():
     assert [r["rules"] for r in rows] == [[], ["no_git_add_all"]]
 
 
+def _at(stamp: str, seconds: float) -> str:
+    t = datetime.fromisoformat(stamp.replace("Z", "+00:00")) + timedelta(seconds=seconds)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_a_later_launch_of_a_pilot_conversation_is_a_hold_a_person_or_the_driver():
+    """D6: a Hold that overlaps the gap, else the cause of the Turn that started the Launch."""
+    s = s_launches()
+    later = [s.mids.index("msg_0006"), s.mids.index("msg_0008")]
+    l1, l2, l3 = s.starts[1], s.starts[2], s.starts[3]
+
+    def causes(*sessions):
+        ans = _whole(s_launches(), conversation=_conversation(list(sessions)))
+        return [_col(ans, "wait_cause")[k] for k in later]
+
+    turns = [{"started_at": _at(l1, -1), "cause": "brief"},
+             {"started_at": _at(l2, -2), "cause": "continuation"},
+             {"started_at": _at(l3, 3), "cause": "nudge"}]     # within the 5 s slack
+    work = {"id": "p1", "kind": "work", "turns": turns}
+    assert causes(work) == ["person", "driver"]
+    # a hold in the gap before the third Launch, on a Session of the conversation
+    held = {**work, "holds": [{"kind": "week_halt", "started_at": _at(l2, 1),
+                               "ended_at": _at(l3, -1)}]}
+    assert causes(held) == ["person", "hold"]
+    # a hold still open counts; one before the gap does not
+    early = {**work, "holds": [{"kind": "slot", "started_at": _at(l1, -30),
+                                "ended_at": _at(l1, -2)}]}
+    assert causes(early) == ["person", "driver"]
+    open_ = {**work, "holds": [{"kind": "pause", "started_at": _at(l2, -1), "ended_at": None}]}
+    assert causes(open_) == ["hold", "hold"]
+    # the Turns of every Session, in time order: a continuation Session's first Turn
+    first = {"id": "p1", "kind": "work", "turns": turns[:1]}
+    then = {"id": "p2", "kind": "work", "turns": [{"started_at": _at(l2, 0), "cause": "resume"},
+                                                  {"started_at": _at(l3, 0), "cause": "person"}]}
+    assert causes(first, then) == ["person", "person"]
+    # a Launch no handed Turn started has no cause
+    assert causes({"id": "p1", "kind": "work",
+                   "turns": [{"started_at": _at(l3, 60), "cause": "person"}]}) == [None, None]
+    assert E.PERSON_CAUSES == {"person", "continuation", "resume"}
+
+
 # -- the classes are turn_profile's --------------------------------------------
 
 def test_a_calls_class_is_classify_turns_for_the_file():
@@ -680,9 +722,9 @@ def test_a_later_launch_is_the_drivers_a_persons_or_open():
     assert [_col(dispatch, "wait_cause")[k] for k in later] == ["driver", "driver"]
     nobody = _whole(s_launches())
     assert [_col(nobody, "wait_cause")[k] for k in later] == ["person", "person"]
+    # a Pilot conversation whose Sessions came with no Turns: the cause is unknown
     pilot = _whole(s_launches(), conversation=_conversation([{"id": "p1", "kind": "work"}]))
-    assert [_col(pilot, "wait_cause")[k] for k in later] == [E.O3_LATER_LAUNCH_OF_PILOT] * 2
-    assert E.O3_LATER_LAUNCH_OF_PILOT is None
+    assert [_col(pilot, "wait_cause")[k] for k in later] == [None, None]
     # a stage's own session run by hand: the rules after the Launch's decide
     stage = _whole(s_launches(), tie=Tie(rule="stage"))
     assert [_col(stage, "wait_cause")[k] for k in later] == ["person", "person"]

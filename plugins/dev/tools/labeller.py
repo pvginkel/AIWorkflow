@@ -227,15 +227,24 @@ def context_key(conversation: dict) -> str:
 def conversation_inputs(conversation: dict) -> dict:
     """The stamp's inputs of what Pilot handed with a conversation: the
     Sessions' kind, brief, repo, clarification and `created_at`, which
-    places a Launch on its Session, in their order, and the Documents' ids,
-    Sessions and source paths."""
+    places a Launch on its Session, and their Holds and Turns (D6), in
+    their order, and the Documents' ids, Sessions and source paths."""
     return {
         "sessions": [[s.get("kind"), s.get("brief"), s.get("repo"), s.get("clarification"),
-                      s.get("created_at")]
+                      s.get("created_at"), _rows(s.get("holds"), "kind", "started_at",
+                                                 "ended_at"),
+                      _rows(s.get("turns"), "started_at", "cause")]
                      for s in conversation.get("sessions") or [] if isinstance(s, dict)],
         "documents": [[d.get("id"), d.get("session"), d.get("source_path")]
                       for d in conversation.get("documents") or [] if isinstance(d, dict)],
     }
+
+
+def _rows(rows, *keys) -> list | None:
+    """A Session's Holds or Turns as the stamp takes them: none where Pilot handed none."""
+    if not isinstance(rows, list):
+        return None
+    return [[r.get(k) for k in keys] for r in rows if isinstance(r, dict)]
 
 
 def transcript_stamp(records, conversation: dict, transcript: dict, pilot: frozenset,

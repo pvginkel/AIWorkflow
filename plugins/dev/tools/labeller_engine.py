@@ -31,6 +31,7 @@ import json
 import re
 import sys
 import zlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -50,9 +51,11 @@ OTHER_KIND = "work"
 READ_CLASSES = set(tp.READ_CLASSES)
 AVOIDABLE_CLASSES = {"retry", "fumble"}
 
-# O3 (§ Open points): the gap before a later Launch of a Pilot conversation. Until it is
-# ruled, no wait cause. This is the one place that reads it.
-O3_LATER_LAUNCH_OF_PILOT: str | None = None
+# The gap before a later Launch of a Pilot conversation (t17-labeller-2.md D6, ruled 2026-11-16),
+# from the Holds and Turns Pilot hands with each Session: `hold` where a Hold overlaps it, else
+# `person` where a Turn of one of these causes started the Launch, else `driver`.
+PERSON_CAUSES = frozenset({"person", "continuation", "resume"})
+TURN_SLACK_S = 5.0     # a Launch's Turn: started at or before its start + 5 s, as its Session
 
 NOTE_TAG_RE = {tag: re.compile(rf"<{tag}>\s*(.*?)\s*</{tag}>", re.S)
                for tag in ("task-id", "tool-use-id", "output-file")}
@@ -169,6 +172,7 @@ class _Job:
         self.dispatch = rule == "dispatch"
         self.records_know = rule in ("dispatch", "stage")
         self.pilot_knows = bool(conv.get("sessions")) or self.sid in (item.get("pilot") or ())
+        self.launch_start = {x.get("n"): _epoch(x.get("started_at")) for x in self.launches}
         self.unit_of = {}
         if self.main:
             for x in self.launches:
@@ -178,6 +182,37 @@ class _Job:
         self.spec_repos = frozenset()
         if getattr(self.tools, "ADD_ALL_ONLY_IN_SPEC_REPO", False):
             self.spec_repos = frozenset(getattr(records, "spec_repos", None) or ())
+
+    def pilot_wait(self, launch: int | None) -> str | None:
+        """The wait cause of a later Launch of a Pilot conversation (D6): `hold` where one of
+        its Sessions' Holds overlaps the gap before it, from the start of the Turn before the
+        Launch's own, else `person` where the Launch's Turn has a person's cause
+        (`PERSON_CAUSES`), else `driver`. The Launch's Turn is the latest of the conversation's
+        Turns started at or before the Launch's start + 5 s. None where Pilot handed no Turn,
+        or none that started it: a request without them keeps the cause unknown."""
+        at = self.launch_start.get(launch)
+        if at is None:
+            return None
+        turns, holds = [], []
+        for s in self.conv.get("sessions") or []:
+            if not isinstance(s, dict):
+                continue
+            for t in s.get("turns") or []:
+                if isinstance(t, dict) and (t0 := _epoch(t.get("started_at"))) is not None:
+                    turns.append((t0, t.get("cause")))
+            for h in s.get("holds") or []:
+                if isinstance(h, dict) and (h0 := _epoch(h.get("started_at"))) is not None:
+                    h1 = _epoch(h.get("ended_at"))
+                    holds.append((h0, INF if h1 is None else h1))
+        turns.sort(key=lambda t: t[0])
+        k = next((i for i in range(len(turns) - 1, -1, -1)
+                  if turns[i][0] <= at + TURN_SLACK_S), None)
+        if k is None:
+            return None
+        since = turns[k - 1][0] if k > 0 else turns[k][0]
+        if any(h0 < at and h1 > since for h0, h1 in holds):
+            return "hold"
+        return "person" if turns[k][1] in PERSON_CAUSES else "driver"
 
     # -- the checkpoint
 
@@ -401,7 +436,7 @@ class _Run(tp.Replay):
         first = not self.seen
         later = (job.main and not first and launch is not None and prev_launch is not None
                  and launch != prev_launch)
-        turn["_wake"] = self._wake_cause(first, later, prev_tools)
+        turn["_wake"] = self._wake_cause(first, later, prev_tools, launch)
         if job.main and (first or later) and launch in job.digest_launches and \
                 self.wake["digest"]:
             turn["_parts"] = self.wake["digest"]
@@ -427,7 +462,8 @@ class _Run(tp.Replay):
             return list(self.ck_prev["tools"]), self.ck_prev["launch"]
         return [], None
 
-    def _wake_cause(self, first: bool, later: bool, prev_tools: list[str]) -> str | None:
+    def _wake_cause(self, first: bool, later: bool, prev_tools: list[str],
+                    launch: int | None = None) -> str | None:
         """What woke the transcript before a Call (§ The labels, by entity, `wait_cause`)."""
         job = self.job
         if first:
@@ -438,7 +474,7 @@ class _Run(tp.Replay):
             if not job.pilot_knows and not job.records_know:
                 return "person"
             if job.pilot_knows:
-                return O3_LATER_LAUNCH_OF_PILOT
+                return job.pilot_wait(launch)
         w = self.wake
         if w["person"]:
             return "person"
@@ -689,6 +725,17 @@ def _line_call(fh, byte: int) -> str | None:
         return None
     mid = msg.get("id")
     return mid if isinstance(mid, str) else None
+
+
+def _epoch(ts) -> float | None:
+    """An ISO time -> seconds since the epoch, a naive one UTC; None for none or a bad one."""
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (dt if dt.tzinfo else dt.replace(tzinfo=UTC)).timestamp()
 
 
 # ---------------------------------------------------------------------------

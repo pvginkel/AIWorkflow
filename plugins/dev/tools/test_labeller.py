@@ -386,6 +386,18 @@ def test_a_stamp_changes_with_the_records_inputs_and_the_context_and_only_with_t
         # A Session's `created_at` places a Launch on it, so it is an input.
         later = [dict(sessions[0], created_at="2026-11-16T00:00:00Z")]
         assert stamp_of(h, conversation("s1", held(), sessions=later, documents=docs)) != base
+        # A Session's Holds and Turns give a later Launch its wait cause (D6).
+        turned = [dict(sessions[0], turns=[{"started_at": "2026-11-15T18:00:01Z",
+                                            "cause": "brief"}])]
+        with_turns = stamp_of(h, conversation("s1", held(), sessions=turned, documents=docs))
+        assert with_turns != base
+        caused = [dict(turned[0], turns=[dict(turned[0]["turns"][0], cause="person")])]
+        assert stamp_of(h, conversation("s1", held(), sessions=caused,
+                                        documents=docs)) != with_turns
+        holding = [dict(turned[0], holds=[{"kind": "slot", "started_at": "2026-11-15T18:00:00Z",
+                                           "ended_at": "2026-11-15T18:00:01Z"}])]
+        assert stamp_of(h, conversation("s1", held(), sessions=holding,
+                                        documents=docs)) != with_turns
         # Facts Pilot hands that no rule reads change nothing.
         renamed = [dict(sessions[0], id="p9")]
         assert stamp_of(h, conversation("s1", held(), sessions=renamed,
