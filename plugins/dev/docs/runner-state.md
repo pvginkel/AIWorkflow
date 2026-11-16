@@ -43,7 +43,7 @@ its `landed` root stands for it; never written by a dry run), `generation` (foll
 row that ran also lists the files it kept (`artifacts`) and the tests its log counted
 (`test_counts`: `{"repo", "component", "tests", "passed"}` per component whose output held a
 runner's count, read with the labeller's `kc_test_counts`; absent where none did, and on a row
-kept before the driver counted them, t17-labeller-2.md D7), and a red one its single re-run
+kept before 0.10.84, when the driver began counting them, t17-labeller-2.md D7), and a red one its single re-run
 (`rerun`: `outcome` — `green`, `red`, `nothing_ran`, `unrunnable` or `timeout` — `log`,
 `duration_s`, `artifacts`), which marks it reproduced or flaky and never changes its outcome — the
 sweep's own `outcome` (red on any red row, else green on any green row, else `nothing_ran`) and

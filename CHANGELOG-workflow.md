@@ -4,6 +4,50 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — The labeller: the workflow's labels for the analysis dashboard, whole or appended, and the run records it reads (v0.10.84)
+
+AIWF-157, AIWF-189, AIWF-190, AIWF-191, AIWF-192, AIWF-193, AIWF-194, AIWF-195 and AIWF-202, the
+labeller batch of the analysis dashboard (P-278, EPIC-12). The workflow's knowledge in the cost
+dashboard's prototype moves into the plugin, as a command PilotApp's collector runs over a batch of
+transcripts on the home; Pilot's code names no label and no list. The operator's rulings are in
+PilotAppSpecs `tools/cost-dashboard/asks/t17-labeller.md` (D1–D4) and `t17-labeller-2.md`
+(D5–D10). The contract is the new `docs/labeller.md`, which PilotApp's slice 052 builds against.
+
+- **`labeller.py`** (with `labeller_vocab.py`, `labeller_files.py`, `labeller_records.py`,
+  `labeller_tools.py`, `labeller_engine.py`, `labeller_check.py`): the verbs `info`,
+  `vocabularies`, `stamps`, `label`, `classes` and `check`, JSON on stdin and JSON Lines out, each
+  request carrying `contract: 1`.
+  - **Labels** for every entity the record gives the labeller: the Call's wait cause, Segment, call
+    class, avoidable kind and batchable condition; the Segments; the Tool Call's command class,
+    effects and rule breaches; the labeller's Events and digest sections; Work Units with their
+    keys, nesting, outcomes, rework and measures; Test Runs; CI Builds and Waits; the adopted
+    groups; the Documents' ask category. Every list they take is declared with its codes, names,
+    descriptions and positions.
+  - **Whole or appended** (AIWF-157): a transcript that grew is labelled from its boundary on with
+    the checkpoint handed back last time, or answered `whole`; labelling in parts, cut after any
+    Call, gives what labelling whole gives. `check` holds that over real transcripts on a home.
+  - **The stamp** (AIWF-191): all the labeller read besides the file; `stamps` names it now for
+    every transcript in one call, without reading one, cheap enough for the collector's 30-second
+    walk.
+  - **The run records** (AIWF-190): the driver's records and the history's groups, a group's key
+    stable across a rename, the adopted slices and their sessions.
+  - **CI Builds** (AIWF-195): read from a session's `track_build.py` wait, its queued, started and
+    ended times included since the host's tool prints them (DI-42).
+  - **File classes** (AIWF-202): six, generated and record counted in no figure, by repository and
+    path; a project's own rules first, then the starting list, AIWorkflow's `plugins/` rule in it.
+- **The run records gain** (AIWF-192, AIWF-193, AIWF-194; D1): each slice's `slice.json` — its
+  card from `slice.md`'s `issue:`, its title, its plan's size, the close-out's entries by fate
+  (fixed, carded, closed) — written by the loops and the close; the plan-reviewer's history row
+  carries its `findings`; every gate and sweep result keeps its suites' test counts (D7);
+  `projects/<repo>.json` holds the project's file-class rules (D2).
+- **`.aiworkflowrc`** takes `[[file_classes]]`, a project's own file-class rules
+  (`project-contract.md`). An older plugin refuses the key.
+- **`seed_run_records.py`** also writes each old slice's `slice.json` from its folder, its filing
+  commit included (D8), never replacing one.
+- **`turn_profile.py`**: `classify_turns` gives each read-class turn its `batchable_why`, the
+  condition that made it batchable or not (AIWF-189), and runs on a resumable `TurnClassifier`
+  and `Replay`, unchanged in its results.
+
 ## 2026-11-16 — A ruling folded into a slice whose requirements are open reaches its plan (v0.10.83)
 
 AIWF-211, found by the consistency review after the AIWF-209 handover. A slice has no

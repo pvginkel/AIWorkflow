@@ -236,7 +236,7 @@ alone (database.md, Transcript's `records_stamp`).
                                     {"agent_id": "…", "agent_type": "…", "held": null}]}]}
 ```
 ```json
-{"contract": 1, "version": "0.10.81",
+{"contract": 1, "version": "0.10.84",
  "declarations": "<digest>", "file_rules": "<digest>", "index": "<blob>",
  "stamps": [{"session_id", "agent_id", "stamp"}]}
 ```
@@ -1012,7 +1012,7 @@ gate's record (`gates/P<id>_gate_<n>.json`), and on a doc, wrap-up or fixes gate
   `ran_at` and started its `duration_s` before.
 - No Test Run comes of `nothing_ran`, of a sweep result marked `reused`, of a gate's
   `spec_check`, `migration_check`, `waived` or `covered` entries, or of a record with no count:
-  the gates and sweeps kept from 0.10.80 until the driver counted them. Old slices have
+  the gates and sweeps kept from 0.10.80 to 0.10.83, before the driver counted them. Old slices have
   no gate or sweep records at all (runner-state.md, "not the gate and sweep records").
 
 **CI Builds** come from the wait (F152.10; AIWF-195). A Tool Call of the class `ci_wait` is read
