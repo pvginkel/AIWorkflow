@@ -42,10 +42,14 @@ _OWN_OUTCOMES = labeller_vocab.UNIT_OUTCOMES
 # driver kept (`test_counts`; t17-labeller-2.md D7, ruled 2026-11-16); one without gives none.
 DRIVER_TEST_RUNS = True
 
-# O6: the triage sessions of old slices stay on no project. True ties every session id that
-# `slice.json`'s `triage_sessions` lists to the slice's `triage` stage, should the seed come
-# to write them.
-TRIAGE_SESSIONS = False
+# R5, the old slices' triage sessions (t17-labeller-2.md D8, ruled 2026-11-16): an interactive
+# session no other rule ties files the adopted slices whose filing commit (`slice.json`'s
+# `filing_commit`, the seed's) its own `git commit`s name, and is tied to one of them.
+TRIAGE_SESSIONS = True
+R5_NEEDLE = 50              # the subject's first normalised characters a commit's text holds
+R5_MIN_NEEDLE = 12          # a shorter subject names nothing
+R5_WINDOW_S = 2 * 86400     # within two days of the filing commit's author time
+COMMIT_RE = re.compile(r"\bgit\b[^\n]*?\bcommit\b")
 
 # ---------------------------------------------------------------- the records' vocabulary
 
@@ -272,9 +276,9 @@ def _reduce_slice_json(doc: dict) -> dict:
     if isinstance(crf, dict):
         out["crf"] = {str(p): {str(r): len(f) for r, f in rounds.items() if isinstance(f, list)}
                       for p, rounds in crf.items() if isinstance(rounds, dict)}
-    ts = doc.get("triage_sessions")
-    if isinstance(ts, list):
-        out["triage"] = [str(s) for s in ts if _str(s)]
+    fc = doc.get("filing_commit")
+    if isinstance(fc, dict) and _str(fc.get("subject")) and _epoch(fc.get("authored_at")):
+        out["filing"] = [str(fc["subject"]), str(fc["authored_at"])]
     return out
 
 
@@ -849,9 +853,6 @@ class _Units:
                              None)
                 if first:
                     self.anchor[st_key] = first
-        if TRIAGE_SESSIONS and facts.get("triage"):
-            for sid in facts["triage"]:
-                self.orch.setdefault(sid, [])
 
     def _history(self, stage: str, st_key: str, st: dict) -> None:
         sl = self.slice
@@ -1149,9 +1150,6 @@ class Records:
         for key, sl in self.slices.items():
             for sid in sl.sessions():
                 self._by_session.setdefault(sid, []).append(key)
-            if TRIAGE_SESSIONS:
-                for sid in sl.facts.get("triage") or []:
-                    self._by_session.setdefault(sid, []).append(key)
         self._folders: dict[str, dict[str, str]] = {}
         for key, sl in self.slices.items():
             self._folders.setdefault(sl.spec, {})[sl.folder] = key
@@ -1399,14 +1397,14 @@ class Records:
     # -- the tie
 
     def needs_facts(self, conversation: dict, transcript: dict) -> bool:
-        """Whether only the transcript's own head can tie it (R2 to R4): a main thread no run
+        """Whether only the transcript's own content can tie it (R2 to R5): a main thread no run
         record names, of a conversation Pilot does not know."""
         sid = str(conversation.get("session_id"))
         return (transcript.get("agent_id") is None and sid not in self._by_session
                 and not conversation.get("sessions") and sid not in self._pilot)
 
     def tie(self, conversation: dict, transcript: dict) -> Tie:
-        """A transcript's tie (§ Work Units, *How a session is tied to its unit*). For R2 to R4
+        """A transcript's tie (§ Work Units, *How a session is tied to its unit*). For R2 to R5
         the transcript carries `facts` (`read_facts`), or, for `stamps`, its `held` stamp,
         whose `<named>` part stands for them."""
         sid = str(conversation.get("session_id"))
@@ -1458,8 +1456,6 @@ class Records:
                 stages.extend(u.orch[sid])
             anchors.extend(k for k, s in u.anchor.items() if s == sid)
             slices.append(slice_key)
-            if TRIAGE_SESSIONS and sid in (self.slices[slice_key].facts.get("triage") or []):
-                stages.append((None, u.close_out_row("triage")["key"]))
         windows.sort(key=lambda w: (w[1] is None, w[1] or 0))
         stages.sort(key=lambda s: (s[0] is None, s[0] or 0))
         units = [w[2] for w in windows] + [s[1] for s in stages]
@@ -1474,8 +1470,7 @@ class Records:
         # One slice's session: its units' rows' digest as the slice's units hold it, which is
         # `_rows_digest` over them, unless the context added the slice to them.
         digest = self._units(slices[0]).by_session.get(sid) \
-            if len(slices) == 1 and len(units) == len(windows) + len(stages) and \
-            not TRIAGE_SESSIONS else None
+            if len(slices) == 1 and len(units) == len(windows) + len(stages) else None
         group = None
         for slice_key in slices:
             if self.adopted(slice_key):
@@ -1489,10 +1484,12 @@ class Records:
                               for s in sessions])
 
     def named_from_facts(self, facts: dict) -> list[str]:
-        """R2, R4 and R3, in that order, on what a main transcript's own head holds
+        """R2, R4, R5 and R3, in that order, on what a main transcript's own content holds
         (`read_facts`): the stamp's `<named>`. Every name a rule tried is listed, as named,
         `<SpecRepo>/<ref>`, up to the one that took the transcript, which carries the rule's
-        unit after an `@`: `@plan`, `@run`, `@close-out`, or R3's `@run.P<id>`."""
+        unit after an `@`: `@plan`, `@run`, `@close-out`, R3's `@run.P<id>`, or R5's
+        `@triage`, R5 listing every slice the session filed, `<SpecRepo>/<folder>`, the one
+        it is tied to first."""
         named: list[str] = []
         spec = spec_of_cwd(facts.get("cwd"))
         entry = facts.get("entrypoint")
@@ -1543,6 +1540,15 @@ class Records:
                     found = hit(spec, m.group(1)) if m else None
             if found:
                 return took(found, "close-out")
+            if TRIAGE_SESSIONS and facts.get("commits"):
+                filed = self._r5(facts["commits"])
+                if filed:
+                    for key in (filed[0], *filed[1]):
+                        name = f"{self.slices[key].spec}/{self.slices[key].folder}"
+                        if name not in named:
+                            named.append(name)
+                    first = self.slices[filed[0]]
+                    return took((f"{first.spec}/{first.folder}", filed[0]), "triage")
         elif entry == "sdk-cli" and facts.get("first_prompt"):
             fp = facts["first_prompt"]
             for rx, stage, _role in R3_ROLES:
@@ -1555,6 +1561,51 @@ class Records:
                         return took(found, f"{stage}.P{phase}" if phase else stage)
                     break
         return named
+
+    def _filings(self) -> list[tuple[str, float, str]]:
+        """(needle, author time, slice key) of every adopted slice whose filing commit the seed
+        noted, the needle the first R5_NEEDLE normalised characters of its subject."""
+        cache = self._cache
+        if "filings" not in cache:
+            out = []
+            for key in sorted(self.slices):
+                filing = self.slices[key].facts.get("filing")
+                if not filing or not self.adopted(key):
+                    continue
+                needle = _norm(filing[0])[:R5_NEEDLE]
+                at = _epoch(filing[1])
+                if len(needle) >= R5_MIN_NEEDLE and at is not None:
+                    out.append((needle, at, key))
+            cache["filings"] = out
+        return cache["filings"]
+
+    def filings_digest(self) -> str:
+        """What R5 reads of the records, for the stamp of a transcript it could tie: every
+        adopted slice's filing commit, with its group."""
+        cache = self._cache
+        if "filings_digest" not in cache:
+            cache["filings_digest"] = _digest([[n, a, k, self.group_of(k)]
+                                               for n, a, k in self._filings()])
+        return cache["filings_digest"]
+
+    def _r5(self, commits) -> tuple[str, list[str]] | None:
+        """R5 on a session's `git commit`s ([time, text after `commit`] each): the adopted
+        slices whose filing commit's needle one of them holds within R5_WINDOW_S of its author
+        time, in key order, and the slice it is tied to: of the group holding most of them,
+        ties to the group of the lowest slice, its lowest slice."""
+        texts = [(t, _norm(text)) for ts, text in commits
+                 if (t := _epoch(ts)) is not None and isinstance(text, str)]
+        if not texts:
+            return None
+        filed = [key for needle, at, key in self._filings()
+                 if any(abs(t - at) < R5_WINDOW_S and needle in text for t, text in texts)]
+        if not filed:
+            return None
+        per: dict[str, list[str]] = {}
+        for key in filed:
+            per.setdefault(self.group_of(key) or key, []).append(key)
+        best = min(per.values(), key=lambda ks: (-len(ks), min(ks)))
+        return min(best), filed
 
     def _from_named(self, sid: str, named) -> Tie:
         """An R2-R4 tie from its `<named>` alone: the slices that are adopted, the group, and
@@ -1573,6 +1624,8 @@ class Records:
             stage, _, phase = took.partition(".")
             if stage == "close-out":
                 unit, rule = units.close_out_row("close-out")["key"], "R4"
+            elif stage == "triage":
+                unit, rule = units.close_out_row("triage")["key"], "R5"
             elif stage in ("plan", "run"):
                 unit = f"{key}|{stage}" if units.has(f"{key}|{stage}") else key
                 rule = "adopted"
@@ -1659,6 +1712,10 @@ class Records:
             recs["named"] = tuple(recs["named"])
         elif tie.units:
             recs["units"] = tie._digest or self._rows_digest(sorted(tie.units))
+        conv, transcript = context.get("conversation"), context.get("transcript")
+        if TRIAGE_SESSIONS and conv is not None and transcript is not None and \
+                self.needs_facts(conv, transcript):
+            recs["filings"] = self.filings_digest()
         if tie.anchors:
             recs["stages"] = tuple((s, self._stage_digest(s)) for s in tie.anchors)
         return recs
@@ -1675,6 +1732,12 @@ def _named_of(held) -> list[str]:
         return []
     parts = held.split(":", 2)
     return [n for n in parts[2].split(",") if n] if len(parts) == 3 else []
+
+
+def _norm(text: str) -> str:
+    """A text as R5 compares it, the prototype's `_norm`: no quotes or backslashes, its
+    whitespace one space, lower case."""
+    return " ".join(re.sub(r"[\\'\"`]", " ", text or "").split()).lower()
 
 
 def spec_of_cwd(cwd: str | None) -> str | None:
@@ -1711,20 +1774,21 @@ def _text_lines(fh, size: int | None):
 
 
 def read_facts(path, size: int | None = None) -> dict:
-    """What the adoption rules read of a main transcript (R2 to R4): its working directory and
-    entrypoint, its first person prompt and that prompt's command, its workflow commands, and
-    the runs of a slice loop its Bash calls make, read with `turn_profile`'s shell reading.
+    """What the adoption rules read of a main transcript (R2 to R5): its working directory and
+    entrypoint, its first person prompt and that prompt's command, its workflow commands, the
+    runs of a slice loop its Bash calls make, read with `turn_profile`'s shell reading, and its
+    Bash calls that commit, each its time and the text after `commit` (the prototype's).
     `size` reads the file as it stood when it was that long (the replay check's cuts)."""
     import sys
     sys.path.insert(0, str(TOOLS_DIR))
     import turn_profile as tp
 
     facts = {"cwd": None, "entrypoint": None, "first_prompt": None, "first_cmd": None,
-             "cmds": [], "loops": []}
+             "cmds": [], "loops": [], "commits": []}
     with open(path, "rb") as fh:
         for line in _text_lines(fh, size):
             user = '"type":"user"' in line and '"tool_result"' not in line
-            bash = '"name":"Bash"' in line and "_loop.py" in line
+            bash = '"name":"Bash"' in line and ("_loop.py" in line or "commit" in line)
             head = facts["cwd"] is None or facts["entrypoint"] is None
             if not (user or bash or head):
                 continue
@@ -1766,6 +1830,10 @@ def read_facts(path, size: int | None = None) -> dict:
                             and b.get("name") == "Bash"):
                         continue
                     command = str((b.get("input") or {}).get("command") or "")
+                    cm = COMMIT_RE.search(command)
+                    if cm:
+                        text = " ".join(command[cm.end():cm.end() + 800].split())[:300]
+                        facts["commits"].append([d.get("timestamp"), text])
                     for seg in tp.bash_segments(command):
                         s = tp._unwrap(seg)
                         wm = tp.WORKFLOW_RE.match(s)

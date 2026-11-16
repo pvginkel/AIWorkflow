@@ -366,7 +366,7 @@ def label_one_transcript(engine, records, conversation: dict, transcript: dict,
         item = {**transcript, "session_id": sid, "file": str(file), "stamp": stamp,
                 "conversation": conversation, "pilot": pilot,
                 # The engine re-stamps with the slices the file's own content
-                # names (the adoption rules R2 to R4): (stamp, tie).
+                # names (the adoption rules R2 to R5): (stamp, tie).
                 "restamp": lambda named: transcript_stamp(
                     records, conversation, transcript, pilot, named)}
         line = engine.label_one(item, tie, records)

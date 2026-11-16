@@ -128,7 +128,7 @@ def label_one(item: dict, tie, records) -> dict:
 
 def _restamped(item: dict, tie, records, path: Path):
     """(stamp, tie), re-tied with the slices the file's own content names where only that can
-    tie it (the adoption rules R2 to R4): Part 2 reads them (`read_facts`,
+    tie it (the adoption rules R2 to R5): Part 2 reads them (`read_facts`,
     `named_from_facts`), and Part 1's `restamp` gives the stamp and tie for them."""
     stamp = item.get("stamp")
     needs = getattr(records, "needs_facts", None)

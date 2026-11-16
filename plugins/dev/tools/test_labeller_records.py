@@ -774,6 +774,78 @@ def test_a_name_of_a_slice_not_adopted_ties_nothing_but_stays_named():
         assert tie.units == () and tie.named == (f"{SPEC}/042",)
 
 
+FILED = "Triage: file slices 001 and 002 of the orchard"
+
+
+def filing(subject=FILED, at="2026-10-01T09:00:00+00:00"):
+    return {"hash": "c0ffee", "subject": subject, "authored_at": at}
+
+
+def with_filings(data):
+    """001_one and 002_two filed in one commit, both of the group First; 003_three alone."""
+    build(data, facts=dict(SLICE_JSON, filing_commit=filing()))
+    build(data, "002_two", facts={"slice": "002_two", "title": "Two",
+                                  "filing_commit": filing()})
+    build(data, "003_three", facts={"slice": "003_three", "title": "Three",
+                                    "filing_commit": filing("Triage: file slice 003, pruning",
+                                                            "2026-10-03T09:00:00Z")})
+
+
+def committing(*commits):
+    return dict(facts("Let us triage the backlog"), commits=[list(c) for c in commits])
+
+
+def test_r5_ties_the_session_whose_commit_filed_the_slices():
+    """D8: the commit text holds the subject's first 50 normalised characters, within two days;
+    the session is tied to the lowest slice of the group holding most of what it filed."""
+    with data_folder() as data:
+        with_filings(data)
+        records, _ = load(data)
+        text = f'-m "{FILED.upper()}" -- slices/backlog/001_one slices/backlog/002_two'
+        named = records.named_from_facts(committing(("2026-10-01T09:00:05Z", text)))
+        assert named == [f"{SPEC}/001_one@triage", f"{SPEC}/002_two"]
+        tie = records.tie(conv("old"), {"agent_id": None, "named": named})
+        assert tie.unit_for(None) == f"{K}|triage" and tie.adopted_group == K
+        assert records.unit_rows([f"{K}|triage"])[-1]["title"] == "Triage"
+        # the group that holds most of what it filed, not the lowest slice it filed
+        both = committing(("2026-10-01T10:00:00Z", text),
+                          ("2026-10-03T09:01:00Z", "-m 'Triage: file slice 003, pruning'"))
+        assert records.named_from_facts(both)[0] == f"{SPEC}/001_one@triage"
+        alone = committing(("2026-10-03T09:01:00Z", "-m 'Triage: file slice 003, pruning'"))
+        named = records.named_from_facts(alone)
+        assert named == [f"{SPEC}/003_three@triage"]
+        assert records.tie(conv("old"), {"agent_id": None, "named": named}).adopted_group == \
+            f"{SPEC}/003_three"
+        # outside the two days, another subject, or an earlier rule: no R5
+        assert records.named_from_facts(committing(("2026-10-03T10:00:00Z", text))) == []
+        assert records.named_from_facts(committing(("2026-10-01T09:00:05Z", "-m 'Other'"))) == []
+        first = dict(facts("/dev:run-slice 001", ["dev:run-slice", "001"]),
+                     commits=[["2026-10-01T09:00:05Z", text]])
+        assert records.named_from_facts(first) == [f"{SPEC}/001@run"]
+        headless = dict(committing(("2026-10-01T09:00:05Z", text)), entrypoint="sdk-cli")
+        assert records.named_from_facts(headless) == []
+
+
+def test_r5_reaches_stamps_through_the_named_slices_and_the_filings():
+    with data_folder() as data:
+        records, _ = load(data)
+        before = {s: stamp_of(records, s) for s in ("old", "cw-1")}
+        with_filings(data)
+        records, _ = load(data)
+        # the seed's filing commits re-stamp every transcript R5 could tie, and no other
+        assert stamp_of(records, "old") != before["old"]
+        assert stamp_of(records, "cw-1") == before["cw-1"]
+        text = f'-m "{FILED}"'
+        c = conv("old")
+        by_file = records.tie(c, {"agent_id": None,
+                                  "facts": committing(("2026-10-01T09:00:05Z", text))})
+        stamp = records.stamp(by_file, ctx(c, MAIN))
+        assert stamp.endswith(f":{SPEC}/001_one@triage,{SPEC}/002_two")
+        held = records.tie(c, {"agent_id": None, "held": stamp, "named": None})
+        assert records.stamp(held, ctx(c, MAIN)) == stamp
+        assert held.unit_for(None) == f"{K}|triage"
+
+
 def test_read_facts_on_an_invented_transcript():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "t.jsonl"
@@ -790,9 +862,15 @@ def test_read_facts_on_an_invented_transcript():
                                "run /work/FooSpecs/slices/001_one --detach"}}]}},
             {"type": "user", "message": {"content": [
                 {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}},
+            {"type": "assistant", "timestamp": "2026-10-01T09:00:05Z", "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "id": "t2", "input": {
+                    "command": "cd /work/FooSpecs && git commit -m \"Triage:  file\n"
+                               "slice 001\" -- slices"}}]}},
         ]
         path.write_text("".join(json.dumps(x, separators=(",", ":")) + "\n" for x in lines))
         got = lr.read_facts(path)
+        assert got["commits"] == [["2026-10-01T09:00:05Z",
+                                   '-m "Triage: file slice 001" -- slices']]
         assert got["cwd"] == "/work/Foo" and got["entrypoint"] == "cli"
         assert got["first_cmd"] == ["dev:run-slice", "001"]
         assert [x[:2] for x in got["loops"]] == [["run_loop", "run"]]
