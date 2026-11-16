@@ -13,8 +13,9 @@ The binding record is PilotAppSpecs' design record. The collection is `design/fe
 file classes F158.5, and the collector's stub labeller F122.5. The entities are `design/database.md`
 §2.5 to §2.11, with decision 79 (the data) and decision 81 (labelling what was appended). The
 operator's rulings for this tool are `tools/cost-dashboard/asks/t14-incremental-labelling.md` (D1 to
-D5) and `asks/t17-labeller.md` (D1 to D4), and its cards are AIWF-157, AIWF-189 to AIWF-195 and
-AIWF-202. This page says how the labeller meets that record. It restates none of it beyond a cite.
+D5), `asks/t17-labeller.md` (D1 to D4) and `asks/t17-labeller-2.md` (D5 to D10), and its cards are
+AIWF-157, AIWF-189 to AIWF-195 and AIWF-202. This page says how the labeller meets that record. It
+restates none of it beyond a cite.
 
 Four rulings shape everything below:
 
@@ -138,7 +139,9 @@ conversation (F152.4). With each conversation it hands what Pilot's inventory ho
 {"session_id": "4eacca94-…",
  "sessions": [{"id": "…", "kind": "work", "created_at": "2026-11-15T18:47:02Z",
                "brief": "/dev:run-slice 001_now_playing", "repo": "SonosDisplay",
-               "clarification": false}],
+               "clarification": false,
+               "holds": [{"kind": "week_halt", "started_at": "…", "ended_at": "…"}],
+               "turns": [{"started_at": "2026-11-15T18:47:05Z", "cause": "brief"}, …]}],
  "documents": [{"id": "…", "session": "…", "source_path": "/work/SonosDisplaySpecs/slices/001_now_playing/asks/1-run-question.md"}],
  "transcripts": [{"agent_id": null, …}, {"agent_id": "a1b2…", "agent_type": "Explore", …}]}
 ```
@@ -148,7 +151,14 @@ conversation (F152.4). With each conversation it hands what Pilot's inventory ho
   - `kind`, Pilot's Session Kind code;
   - `brief`, the first 400 characters of its first Turn that no person wrote;
   - `repo`, the Work's `repo`, else its Project's;
-  - `clarification`, true where the Work is a Clarification Run.
+  - `clarification`, true where the Work is a Clarification Run;
+  - `holds`, its Holds, each its `kind` (Pilot's Hold Kind), `started_at` and `ended_at`, null
+    while it holds;
+  - `turns`, its Turns, each its `started_at` and `cause`, Pilot's Turn Cause code as Pilot has
+    it.
+
+  `holds` and `turns` (t17-labeller-2.md D6) give a later Launch its wait cause (§ The labels,
+  by entity). Both are optional: a Session handed without `turns` leaves that cause unknown.
 - **`documents`** holds the Documents those Sessions registered or wrote. `source_path` is set for
   a registered one and null for one of Pilot's own (database.md, Prose Item's `source_path`).
 - **`agent_type`** comes with each sub-agent's transcript. It is the collector's fact,
@@ -177,25 +187,27 @@ transcript of the slice at every walk, and that is the cost the appended path ex
 So the stamp is a digest of the derived inputs the rules below read. A rewrite that changes none
 of them changes no stamp. The inputs are:
 
-- **Of the context:** the Sessions' `kind`, `brief`, `repo`, `clarification` and `created_at`,
-  which places a Launch on its Session, and their order; the Documents' ids, Sessions and source
-  paths; a sub-agent's `agent_type`; and whether a slice the transcript serves is run by Pilot (the
-  `pilot` header, reduced to that one bit). A sub-agent's stamp covers the conversation's context
-  as its main thread's does.
+- **Of the context:** the Sessions' `kind`, `brief`, `repo`, `clarification` and `created_at`, which
+  places a Launch on its Session, their Holds and Turns, and their order; the Documents' ids,
+  Sessions and source paths; a sub-agent's `agent_type`; and whether a slice the transcript serves
+  is run by Pilot (the `pilot` header, reduced to that one bit). A sub-agent's stamp covers the
+  conversation's context as its main thread's does.
 - **Of the run records:** the rows of every Work Unit the transcript's labels name (§ Work Units).
   That is the unit of each Launch and every unit above it through `part_of` and
   `occasioned_by`, with their measures. For the stage's anchor it is every unit of its stage
-  with their Test Runs. Add the role its turns are classed under and the group its main thread is
-  adopted by.
+  with their Test Runs. Add the role its turns are classed under, the group its main thread is
+  adopted by, and the set of spec repos, where a `git add -A` breaches a rule (§ The labels, by
+  entity). A main thread only its own content can tie (*The groups*, below) adds what R5 reads:
+  every adopted slice's filing commit, with its group.
 - **Of another transcript of the conversation:** nothing in contract 1. A sub-agent is labelled
   from its own file and its `agent_type` alone. The slot stays, so that a later rule which takes
   something from the main thread puts it in the stamp.
 
 Because a transcript's tie to a slice is found from its session id in the run records, or from the
 context, the inputs above can be computed without the file. There is one exception. Under the
-adoption rules R2 to R4, an old interactive or headless session is tied to a slice by what its own
-first prompt names (§ Work Units, *The groups*). Those slice names come from the file, so the stamp
-carries them. A stamp is the text
+adoption rules R2 to R5, an old interactive or headless session is tied to a slice by what its own
+prompts and commands name (§ Work Units, *The groups*). Those slice names come from the file, so the
+stamp carries them. A stamp is the text
 
 ```
 1:<digest>[:<named>]
@@ -205,10 +217,11 @@ carries them. A stamp is the text
   inputs. A set of units enters them as one digest of its units' own: each unit's is that of
   its row and of every row above it, taken when the index is built.
 - `<named>` lists, comma-separated, the slices the transcript's own content named, as named. The
-  name that tied it carries its unit after `@`: `PilotAppSpecs/044@run`, `…@close-out`,
-  `…@run.P2` for an R3 session's phase. A name tried before it, which tied nothing, stays bare.
-  The digest covers every unit of each named slice, so a change anywhere in that slice changes
-  the stamp.
+  name that tied it carries its unit after `@`: `PilotAppSpecs/044@run`, `…@close-out`, `…@run.P2`
+  for an R3 session's phase, `PilotAppSpecs/044_web_push@triage` for R5's, which comes first, before
+  the other slices the session filed. A name tried before it, which tied nothing, stays bare. The
+  digest covers every unit of each named slice, so a change anywhere in that slice changes the
+  stamp.
 
 `stamps` recomputes a transcript's digest from the `<named>` part of the stamp Pilot holds for it,
 so it never needs the file. Pilot stores the stamp as opaque text and compares it for equality
@@ -447,7 +460,7 @@ rows below, and each `description` is the line given here. Declared lists:
 | `sweep` | Sweep | A loop-tail gate sweep the driver ran. |
 | `gate` | Gate | A gate the driver ran: a phase's gate, or the doc, wrap-up or fixes gate. |
 
-A driver's gate is a kind of its own (O2, settled).
+A driver's gate is a kind of its own: the record's Work Unit covers "a driver's gate or sweep".
 
 **`nesting`** gives each allowed pairing as inner ⊂ outer:
 - stage ⊂ slice;
@@ -468,8 +481,27 @@ A driver's gate is a kind of its own (O2, settled).
 | `red` | Red | A gate or sweep that failed. |
 | `green` | Green | A gate or sweep that passed. |
 | `question` | Question | A writer that stopped on a question only the operator can answer. |
+| `blocked` | Blocked | A session that stopped on something it could not get past, and said so. |
+| `session_limit` | Session limit | A session the account's usage limit ended; the driver waited it out and dispatched the round again. |
+| `timeout` | Timed out | A session that ran past its time limit. |
+| `invalid` | No verdict | A session that wrote no verdict, or one that does not read. |
+| `nothing_ran` | Nothing ran | A gate or sweep in which no command ran a check: neither green nor red. |
+| `complete` | Complete | A completion consult: the plan describes no outstanding work. |
+| `appended` | Appended | A completion consult that appended phases for outstanding work. |
+| `flake` | Flake | A completion consult that took every red as a flake, for the test-fixer. |
+| `fix_round` | Fix round | A review consult that funded another fix round. |
+| `merge` | Merge | A review consult that merged the phase, its findings recorded. |
+| `bail` | Bail | A consult that stopped the slice. |
+| `proceed` | Proceed | An older checkpoint consult: the rest of the plan holds. |
+| `amend` | Amend | An older checkpoint consult that changed the rest of the plan. |
+| `another_round` | Another round | An older review consult that granted one more review round. |
+| `merge_flagged` | Merge flagged | An older review consult that merged, the findings flagged for the operator. |
+| `fix_tasks` | Fix tasks | An older verification consult: the findings block, and fix tasks are owed. |
+| `retry` | Retry | An older consult that dispatched a blocked agent once more. |
 
-The history's other words are open (O1).
+The first six are the record's. The rest are the words the driver writes, in its history now or
+in the records it kept before, that mean none of the six, each a value of its own (t17-labeller-2.md
+D5, "fold where alike"); § Work Units, `outcome`, folds the others.
 
 **`rework_kind`:**
 
@@ -610,11 +642,12 @@ Each one's name is its code.
 
 **`event_kind`**, the labeller's own (extra fact: `is_error`):
 
-| Code | Name | Description |
-|---|---|---|
-| `gate_red` | Gate red | A gate or a test suite a session ran came back red. |
+| Code | Name | Is error | Description |
+|---|---|---|---|
+| `gate_red` | Gate red | no | A gate or a test suite a session ran came back red. |
 
-Its `is_error` is open (O8): until it is ruled, null.
+A red gate is the workflow doing its job, not the machinery failing, so it is no error
+(t17-labeller-2.md D9).
 
 **`context_part_kind`**, the labeller's own:
 
@@ -654,8 +687,14 @@ transcript served (§ Work Units, *The groups*), and none otherwise.
   2. The first Call of a later Launch, in a transcript the run records name as a dispatch: `driver`.
   3. The first Call of a later Launch, in a transcript neither Pilot nor the run records know:
      `person`.
-  4. The first Call of a later Launch of a Pilot conversation: open (O3). Until it is ruled, none
-     (`labeller_engine.O3_LATER_LAUNCH_OF_PILOT`).
+  4. The first Call of a later Launch of a Pilot conversation (t17-labeller-2.md D6), from the
+     Holds and Turns handed with its Sessions (§ What Pilot hands with a conversation). The
+     Launch's Turn is the latest of the conversation's Turns started at or before the Launch's
+     `started_at` plus 5 s, and the gap before it runs from the start of the Turn before that one.
+     `hold` where a Hold of any of its Sessions overlaps the gap; else `person` where the Launch's
+     Turn's cause is a person's, `person`, `continuation` (the run going on once the operator
+     answered its documents) or `resume` (a person's Resume); else `driver`. With no Turn handed
+     that started it: none.
   5. A person's prompt came in between: a user line that is no tool result, no task notification
      and not meta, as `turn_profile`'s `_user_text_kind` reads it: `person`.
   6. A task notification came in between, or the Call before waited on a background task
@@ -717,8 +756,8 @@ program.
     in its body, whatever the command's class. A single sleep that lets something settle, as in
     `sleep 5 && curl …`, breaches nothing.
   - `no_git_add_all`: `git add -A`, `git add --all`, `git add .`, or `git commit` with `-a`
-    (`-am`). Whether this counts only in a shared tree is open (O9); until it is ruled, it counts
-    in any tree.
+    (`-am`), in a spec repo's tree, a linked worktree of one included: the one tree the
+    workflow's contract knows is shared (t17-labeller-2.md D10). A spec repo is § File classes'.
   - `no_tail_on_background_log`: a `tail` of a file that a background task of the same Launch is
     still writing. That means the output file its notification will name, or the target of a
     `>` or `tee` in a `run_in_background` command, where that task has not yet been notified as
@@ -836,17 +875,22 @@ since its conversation is the orchestrator's.
     `run_phase` is `done`. The end is `exit.ts` of a code-0 exit, else the last row's `ts`;
   - a slice: its earliest stage's start, and its run stage's end.
 - **`outcome`:**
-  - a dispatch, a gate or a sweep: its row's `outcome`, through the table below;
+  - a dispatch, a gate or a sweep: its row's `outcome`, whatever its role, through the table
+    below;
   - a phase, a stage or a slice: `done` once it is done, as above.
 
-  | Role | History outcome | Unit Outcome |
-  |---|---|---|
-  | code-writer, plan-writer, doc-writer, wrap-up | `done` | `done` |
-  | code-writer | `question` | `question` |
-  | code-reviewer | `signoff` | `signoff` |
-  | code-reviewer, plan-reviewer | `issues` | `issues` |
-  | gate, sweep, doc-gate, wrap-up-gate, fixes-gate, fixes-doc-gate | `green` / `red` | `green` / `red` |
-  | every other pair | | open (O1). Until it is ruled, none (`labeller_records.OTHER_OUTCOMES`, empty) |
+  | History outcome | Unit Outcome |
+  |---|---|
+  | `done`, and `clean` (a test-agent's, a test-fixer's, the old code-tester's) | `done` |
+  | `signoff`, and `go` (the plan-reviewer's) | `signoff` |
+  | `issues`, `critical` (the code-reviewer's) and `findings` (the test-agent's) | `issues` |
+  | `red`, `green` | the same |
+  | `question`, and `questions` (the plan-writer's and the plan-reviewer's) | `question` |
+  | a word `unit_outcome` declares past the six | the same |
+  | any other word | none |
+
+  A word that means one of the record's six takes it, and every other word the driver writes is
+  a value of its own (t17-labeller-2.md D5; § The vocabularies).
 
 - **`rework_kind`**, on dispatches, from `slice_cost.derive`'s rule:
   - The run's completion consults take `consult`. These are the consult rows whose `site` is
@@ -899,7 +943,7 @@ declared groups follow the `pilot` header.
   in the `pilot` header's conversations. That last test is the record's "a slice any Pilot
   session ran is not adopted".
 - **Adoption** is the prototype's `adopted_db`. A main thread goes to the first rule that takes it,
-  in the order R1, R2, R4, R3:
+  in the order R1, R2, R4, R5, R3:
   - **R1:** its session is an adopted slice's orchestrator or a history row's.
   - **R2:** an interactive session with no Pilot Session whose first person prompt is
     `/dev:plan-slice` or `/dev:run-slice` on a slice, or which ran `plan_loop.py` or
@@ -907,14 +951,21 @@ declared groups follow the `pilot` header.
     first.
   - **R4:** an interactive session with `/dev:close-out`, or whose first prompt says close out.
     Its stage is `close-out`.
+  - **R5:** an interactive session whose own `git commit` filed slices (t17-labeller-2.md D8).
+    It files an adopted slice where a Bash command's text after `git … commit`, normalised as the
+    prototype's `_norm` does it (no quotes or backslashes, whitespace one space, lower case),
+    holds the first 50 normalised characters of the subject of the slice's filing commit, within
+    two days of that commit's author time. A subject shorter than 12 characters names nothing. The
+    filing commit is `slice.json`'s `filing_commit`, which the seed notes
+    ([runner-state.md](runner-state.md) § The run records). Of the group holding most of the
+    slices it filed, ties going to the group of the lowest slice, the session is tied to the
+    lowest slice. Its stage is `triage`.
   - **R3:** a headless session (`sdk-cli`) that no state file records, whose first prompt names
     the slice, with the role and phase that the prototype's `R3_ROLES` read from it.
 
   The spec repo of a name with no repo is the one the session's working directory names, as
-  `spec_of_cwd` gives it. The transcript's `adopted_group` is its slice's group. Each R2 to R4
-  slice name goes into the stamp's `<named>`.
-- **R5 is open** (O6): the triage session, found by the commit that added the slice's `slice.md`.
-  Until it is ruled, none (`labeller_records.TRIAGE_SESSIONS`, off).
+  `spec_of_cwd` gives it. The transcript's `adopted_group` is its slice's group. Each R2 to R5
+  slice name goes into the stamp's `<named>`, every slice an R5 session filed among them.
 
 ## Test Runs and CI Builds
 
@@ -944,22 +995,25 @@ component where the command names one, else it is dropped. Each Test Run takes t
 Part 3 pins the summaries this reads (pytest, Playwright, vitest, `go test`, `node --test`, and
 kc's own per-component lines) with fixtures, one for each runner.
 
-**A Test Run of a Work Unit**, from the driver's records. It is one per `verb: test` result of a
-sweep (`sweeps/r<n>.json`'s `results`), run by the sweep's unit, and one per `projects` entry of a
-phase gate's record (`gates/P<id>_gate_<n>.json`), run by the gate's unit. It takes these fields:
+**A Test Run of a Work Unit**, from the driver's records. The driver reads each suite's count of
+tests from its own gate log as the gate ends, with the reader above
+(`labeller_tools.kc_test_counts`), and keeps it as `test_counts` (t17-labeller-2.md D7;
+[runner-state.md](runner-state.md)). A Test Run is one per count kept: on a `verb: test` result of a
+sweep (`sweeps/r<n>.json`'s `results`), run by the sweep's unit; on a `projects` entry of a phase
+gate's record (`gates/P<id>_gate_<n>.json`), and on a doc, wrap-up or fixes gate's record
+(`gates/<role>_<n>.json`), run by the gate's unit. It takes these fields:
 
-- `suite` is `<repo>/<component>/test`. The repo is the result's `repo`, or for a phase gate the
-  base name of `state.json`'s `phases[<id>].landed.root`, else of its `target`. `outcome` gives
-  `passed`.
+- `suite` is `<repo>/<component>/test`, the count's own. The repo is the count's `repo`, else the
+  result's, or for a phase gate the base name of `state.json`'s `phases[<id>].landed.root`, else
+  of its `target`.
+- `passed` and `tests` are the count's: no failure in its summaries and kc's mark `OK`, and the
+  summaries' count.
 - `started_at` and `ended_at` come from the record. A sweep's result ended at the sweep's
   `ran_at` and started its `duration_s` before.
-- No Test Run comes of `nothing_ran`, of a sweep result marked `reused`, or of a gate's
-  `spec_check`, `migration_check`, `waived` or `covered` entries.
-
-The records hold no count of tests, and Test Run's `tests` is required. Whether these Test Runs
-exist before something gives that count is open (O4). Until it is ruled, they are not handed
-(`labeller_records.DRIVER_TEST_RUNS`, off). Old slices have no gate or sweep records at all
-(runner-state.md, "not the gate and sweep records").
+- No Test Run comes of `nothing_ran`, of a sweep result marked `reused`, of a gate's
+  `spec_check`, `migration_check`, `waived` or `covered` entries, or of a record with no count:
+  the gates and sweeps kept from 0.10.80 until the driver counted them. Old slices have
+  no gate or sweep records at all (runner-state.md, "not the gate and sweep records").
 
 **CI Builds** come from the wait (F152.10; AIWF-195). A Tool Call of the class `ci_wait` is read
 like this:
@@ -979,12 +1033,11 @@ like this:
     line (DI-42, 2026-11-15). A `?`, or a summary from before DI-42, gives none.
   - `commit` is the `--hash`, for the row whose job the command named, a build that superseded
     the first one included.
-- **`deployed_at`** goes on the build that a handoff heading of the `=== Argo CD follow ===`
-  section names (`… pushed to main, pins … (PilotApp/Build-Main #180)`), where that section's
-  `Result:` line opens `rolled`. It is the moment the wait returned (database.md, CI Build; O5,
-  settled): for a background wait its task notification's time, or the reading call's result time
-  where the summary was read before the notification came. DI-42's `↳ sync …, roll ended <t>` is
-  read and not taken.
+- **`deployed_at`** goes on the build that a handoff heading of the `=== Argo CD follow ===` section
+  names (`… pushed to main, pins … (PilotApp/Build-Main #180)`), where that section's `Result:` line
+  opens `rolled`. It is the moment the wait returned (database.md, CI Build): for a background wait
+  its task notification's time, or the reading call's result time where the summary was read before
+  the notification came. DI-42's `↳ sync …, roll ended <t>` is read and not taken.
 - A wait whose summary never reached the transcript makes no CI Build and no CI Wait. Its Tool
   Call keeps `ci_wait` and its run time. Neither does a run that exited before its table: no build
   appeared, or `--help`.
@@ -1024,8 +1077,9 @@ no paths, is skipped. The starting list follows in this order, from
   `spec_repo`. A slice folder is a path segment matching `\d{3}[a-z]?_[a-z0-9_]+` directly under
   the repository's root `slices/`, or under
   `slices/<backlog|active|completed|archive|cancelled|deferred>/`.
-- **AIWorkflow's rule** stands where the table has it, after the tests and before the docs (O7,
-  settled), so `plugins/dev/tools/test_*.py` stays `test` and the skills and agents are `code`.
+- **AIWorkflow's rule** stands where the table has it, after the tests and before the docs, which
+  keeps t17 D2's intent, so `plugins/dev/tools/test_*.py` stays `test` and the skills and agents
+  are `code`.
 - **`file_rules`** is the digest of the effective rules: the version, every `projects/*.json`'s
   rules (the rules alone, not the file's `updated_at`) and the set of spec repos. `stamps` answers
   it too, at the cost of a stat and a few small reads. The record has every File classed again at
@@ -1130,63 +1184,13 @@ check as its reproduction.
 - **Tied by the run records.** The prototype placed a loop conversation on a Pilot Turn by time
   (`TURN_SLACK`, `BEFORE_FIRST_TURN`, `AFTER_TURN_END`). That placement is now Pilot's own, its
   Launch's `session` (assertion 538). The labeller only maps a Launch to its dispatch row.
-- **R5 dropped until ruled** (O6): it needs the spec repos' git history, which the labeller cannot
-  read.
+- **R5 from the seed's filing commit, one session at a time.** The labeller reads no spec repo's
+  history, so the seed notes each old slice's filing commit (t17-labeller-2.md D8). The prototype
+  gave each slice the one session, of all those whose commits named it, nearest the filing
+  commit in time. The labeller judges each session alone, as its stamp needs, so a slice the
+  commits of two sessions name within the two days is filed by both.
 - **The clarification keeps the prototype's split.** It is the slice's, not the stage's, though a
   Launch is placed by its Session's `created_at` where the prototype used the Turns' times.
-
-## Open points
-
-Each changes a figure the dashboard can show, and neither the record nor the rulings settles it.
-Each is the operator's to rule, and the ruling is pending: PilotAppSpecs
-`tools/cost-dashboard/asks/t17-labeller-2.md` puts them as D5 to D10. Until a point is ruled, the
-build gives its default, set in one place in the code, as each item says.
-
-- **O1. Unit Outcome for the history's other words** (D5). These are the plan-reviewer's `go` and
-  `questions`, the plan-writer's `questions`, the test-agent's `clean` and `findings`, the
-  test-fixer's and the old code-tester's `clean` and `issues`, every role's `blocked` and
-  `session_limit`, the gates' `nothing_ran`, and the consults' actions (`complete`, `proceed`,
-  `amend`, `appended`, `merge`, …). The choices:
-  - fold them into the record's six (`go` as `signoff`, `questions` as `question`, `clean` as
-    `done`, `findings` as `issues`);
-  - declare each word as a value of its own;
-  - leave them with no outcome.
-
-  The build gives no outcome (`labeller_records.OTHER_OUTCOMES`, empty).
-- **O3. The gap before a later Launch of a Pilot conversation** (D6). This is a person answering,
-  Pilot holding the session, or Pilot's own nudge. Telling them apart needs what the record does
-  not hand the labeller: each Session's Holds, and its Turns' `cause`. The choices:
-  - Pilot hands both, and the labeller gives `hold` where a Hold overlaps the gap, else `person` for
-    a Turn a person caused, else `driver`;
-  - the labeller gives `person` to all of them;
-  - none.
-
-  The build gives none (`labeller_engine.O3_LATER_LAUNCH_OF_PILOT`).
-- **O4. The driver's Test Runs have no test count** (D7). The choices:
-  - the driver records each suite's count in the gate and sweep records (an AIWF card);
-  - the record makes Test Run's `tests` optional (a P card);
-  - no Test Run from the driver's records.
-
-  The build gives the third (`labeller_records.DRIVER_TEST_RUNS`, off; on, they are handed with
-  `tests` null).
-- **O6. The triage sessions of old slices (R5)** (D8). The choices:
-  - the seed writes each old slice's triage session into `slice.json`, found as the prototype did
-    from the commit that added `slice.md` (an AIWF card for the seed);
-  - they stay on no project.
-
-  The build gives the second (`labeller_records.TRIAGE_SESSIONS`, off; on, it ties the session
-  ids `slice.json`'s `triage_sessions` lists to the slice's `triage` stage).
-- **O8. `gate_red`'s `is_error`** (D9): whether a red gate counts among the error events. The
-  build declares it null (`labeller_vocab.GATE_RED_IS_ERROR`).
-- **O9. `no_git_add_all` outside a shared tree** (D10). The record's sample breaches it "in a
-  shared tree", and the labeller cannot tell which trees kc marks shared. The choices are any tree
-  or only a spec repo's. The build counts any tree (`labeller_tools.ADD_ALL_ONLY_IN_SPEC_REPO`,
-  off).
-
-**Settled.** O2: a driver's gate is a Work Unit of the kind `gate`, gate ⊂ phase and gate ⊂
-stage, carried by the anchor (§ Work Units). O5: `deployed_at` is the record's, the moment the
-wait returned (`labeller_tools.deployed_at`). O7: AIWorkflow's `plugins/` rule stands after the
-test rule and before the docs rule (§ File classes).
 
 ## Modules and build parts
 
@@ -1215,16 +1219,18 @@ test rule and before the docs rule (§ File classes).
   `tie(conversation, transcript) -> Tie`; `unit_rows(keys)`; `stage_rows(stage_key)`;
   `test_runs(stage_key)` and `driver_test_runs(stage_key)`; `groups()`, as `vocabularies`
   declares them; `use_pilot(ids)`; `needs_facts(conversation, transcript)` and
-  `named_from_facts(facts)`, beside the module's `read_facts(path, size=None)`; `spec_repos()`;
-  `project_rules`; `stamp_inputs(tie, context)` and `stamp(tie, context)`, the context being
-  `{"conversation", "transcript", "pilot"}` with `pilot` a frozenset.
+  `named_from_facts(facts)`, beside the module's `read_facts(path, size=None)`; the properties
+  `spec_repos` and `spec_digest`; `filings_digest()`; `project_rules`; `stamp_inputs(tie,
+  context)` and `stamp(tie, context)`, the context being `{"conversation", "transcript",
+  "pilot"}` with `pilot` a frozenset.
 - **`labeller_tools`**: `tool_labels(name, input, result, ctx)`, `ctx` a `ToolCtx`, giving the
   labels and, for the engine, `ci_wait`, `ci_summaries`, `background` and `reads`;
   `digest_sections(prompt_text)`; and `ci_builds`, `parse_track_summary`,
-  `parse_test_summaries`, `command_class`, `repo_of`, `result_text`, `deployed_at` and
-  `gate_red_event`. It reads commands through `turn_profile`'s private shell helpers (`_bash`,
-  `_split`, `_unwrap`, `_blank`, `_word_end`, `_unquote`, `_verb`), so a change to them is a
-  change to the labeller and runs its suites.
+  `parse_test_summaries`, `command_class`, `repo_of`, `result_text`, `deployed_at`,
+  `gate_red_event` and `kc_test_counts`, which the run loop also reads its gate logs with. It
+  reads commands through `turn_profile`'s private shell helpers (`_bash`, `_split`, `_unwrap`,
+  `_blank`, `_word_end`, `_unquote`, `_verb`), so a change to them is a change to the labeller
+  and runs its suites.
 - **`labeller_engine`**: `label_one(item, tie, records)`, raising `LabelError(code, message)`. It
   steps `turn_profile.TurnClassifier(reads_are_work, plan_is_edit, first_edit_turn, state)` with
   `.step(turn, last)` and `.state()`, `first_edit_turn` being `"auto"`, a turn or none, and reads
@@ -1239,7 +1245,7 @@ built beside one another against the interfaces above, and last the check and th
 - the corpus tests and `labeller.py check` (§ The replay check);
 - the timings against § The stamp's targets, on the home;
 - `CLAUDE.md`'s tool map and `README.md`'s lines;
-- the plugin version and changelog entry, once the open points are ruled.
+- the plugin version and changelog entry.
 
 Slice 052's planning reads this page as released. PilotApp's stub labeller (F122.5) answers the
 same shapes.
