@@ -13,6 +13,7 @@ records; the engine (`labeller_engine.py`) calls it once per Tool Call and keeps
     ci_builds(wait, summary, returned_at)  -> the CI Build rows a matched summary gives
     parse_track_summary(text)              -> every `track_build.py` summary in a text
     parse_test_summaries(text)             -> every test runner summary in a text
+    kc_test_counts(text, component)        -> a `kc project test` output's counts, per component
 
 A Bash command is read through `turn_profile`'s shell reading (`_bash`, `_unwrap`, `_split`), so
 `cexec`, `timeout`, `sh -c` and `cd … &&` hide no program, and a program named inside quoted text
@@ -946,15 +947,25 @@ def _test_runs(cmd: str, stages: list[_Stage], text: str, ctx: ToolCtx) -> list[
 
 def _kc_runs(kc: list[tuple[_Stage, tuple[str, str | None]]], summaries: list[Summary],
              text: str, ctx: ToolCtx) -> list[dict]:
-    """`kc project test`: one Test Run per component, from kc's own lines — a component's
-    `<comp>: <command>    [  OK  ]` heads, the `full output: …/<verb>-<time>.log` that ends each
-    verb's output — and the runner summaries inside them."""
-    lines = text.splitlines()
+    """`kc project test`: one Test Run per component, from kc's own lines (`_kc_groups`) and
+    the runner summaries inside them."""
     tests_only = all(k[0] == "test" for _, k in kc)
     projects = {k[1] for _, k in kc if k[0] == "test"}
     only = next(iter(projects)) if len(projects) == 1 else None
     repo = next((repo_of(st.cwd) for st, k in kc if k[0] == "test"), None) \
         or repo_of(ctx.cwd) or "?"
+    by_comp, red = _kc_groups(text, summaries, tests_only, only)
+    return [_merge(f"{repo}/{c}/test", f"{repo} {c} test", items, c not in red, None, ctx)
+            for c, items in by_comp.items()]
+
+
+def _kc_groups(text: str, summaries: list[Summary], tests_only: bool, only: str | None
+               ) -> tuple[dict[str, list[Summary]], set[str]]:
+    """The runner summaries of a `kc project` output by component, and the components kc marked
+    other than OK: a component's `<comp>: <command>    [  OK  ]` heads, and the `full output:
+    …/<verb>-<time>.log` that ends each verb's output. `tests_only` reads an output with no
+    verb line as the tests'; `only` is the component a summary before any head is."""
+    lines = text.splitlines()
     groups: list[tuple[int, int, str | None]] = []   # (first line, last line, verb)
     begin = 0
     for i, ln in enumerate(lines):
@@ -979,7 +990,21 @@ def _kc_runs(kc: list[tuple[_Stage, tuple[str, str | None]]], summaries: list[Su
                     c = comp or only
                     if c:
                         by_comp.setdefault(c, []).append(s)
-    return [_merge(f"{repo}/{c}/test", f"{repo} {c} test", items, c not in red, None, ctx)
+    return by_comp, red
+
+
+def kc_test_counts(text: str, component: str | None = None) -> list[dict]:
+    """The tests a `kc project test` output counted, per component: `[{"component", "tests",
+    "passed"}]`, in kc's order, for the driver's gate and sweep records (D7, ruled 2026-11-16).
+    `component` is the `--project` the command named, the component of a summary before any
+    head; a component whose output holds no runner's count is not listed. The same reading as
+    a Tool Call's Test Runs (`_kc_runs`)."""
+    summaries = parse_test_summaries(text)
+    if not summaries:
+        return []
+    by_comp, red = _kc_groups(ANSI_RE.sub("", text), summaries, True, component)
+    return [{"component": c, "tests": sum(s.tests for s in items),
+             "passed": c not in red and not any(s.failed for s in items)}
             for c, items in by_comp.items()]
 
 

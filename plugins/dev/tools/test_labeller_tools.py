@@ -725,6 +725,26 @@ def test_kc_a_component_with_no_summary_has_no_run():
     assert _runs("kc project test --project manual", text) == []
 
 
+def test_kc_test_counts_are_the_driver_s_reading_of_its_gate_log():
+    """D7: the driver counts a gate's and a sweep's tests from its own log, per component."""
+    assert lt.kc_test_counts(KC_TWO) == [
+        {"component": "backend", "tests": 75, "passed": True},
+        {"component": "frontend", "tests": 41, "passed": False},
+        {"component": "sidecar", "tests": 2, "passed": True}]
+    assert lt.kc_test_counts(KC_LINT_AND_TEST) == [
+        {"component": "backend", "tests": 75, "passed": True}]
+    cut = "    ===== 2743 passed in 282.37s =====\n" \
+          "full output: /tmp/kc/project/test-20261115T100000Z-87913.log\n"
+    assert lt.kc_test_counts(cut, "backend") == [
+        {"component": "backend", "tests": 2743, "passed": True}]
+    assert lt.kc_test_counts(cut) == []
+    coloured = "\x1b[1mbackend: cexec toolbox uv run pytest    [  OK  ]\x1b[0m\n" \
+               "    75 passed in 12.31s\n"
+    assert lt.kc_test_counts(coloured) == [{"component": "backend", "tests": 75,
+                                            "passed": True}]
+    assert lt.kc_test_counts("nothing to see\n", "backend") == []
+
+
 # -- gate_red ---------------------------------------------------------------------
 
 def test_a_red_gate_or_suite_is_an_event():
