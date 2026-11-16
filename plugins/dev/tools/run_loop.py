@@ -172,6 +172,7 @@ import asks  # noqa: E402
 import checks  # noqa: E402
 import debrief  # noqa: E402
 import github_target  # noqa: E402
+import labeller_tools  # noqa: E402
 import long_run  # noqa: E402
 import pilot_progress  # noqa: E402
 import project_config  # noqa: E402
@@ -5196,6 +5197,25 @@ def _file_size(path: Path) -> int:
         return 0
 
 
+def _test_counts(log_path: Path, start: int = 0, end: int | None = None,
+                 component: str | None = None, repo: str = "?"
+                 ) -> list[dict] | None:
+    """The tests one `kc project test` counted, read from its own bytes
+    `[start, end)` of `log_path` (`labeller_tools.kc_test_counts`, D7):
+    `[{"repo", "component", "tests", "passed"}]`, `component` the
+    `--project` the command named. None where it counted none — and where
+    the reading fails at all: a count never fails the run."""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(start)
+            data = f.read() if end is None else f.read(max(end - start, 0))
+        counts = labeller_tools.kc_test_counts(
+            data.decode("utf-8", errors="replace"), component)
+        return [{"repo": repo, **c} for c in counts] or None
+    except Exception:
+        return None
+
+
 def _file_sig(path: Path) -> tuple[int, int, int] | None:
     """A regular file's (mtime_ns, size, inode), None where there is none —
     what the sweep compares across a command to tell a file it wrote from
@@ -5650,6 +5670,9 @@ class RunLoop:
         # and the plugin this process runs, which every history row names.
         self._records: RunRecords | None = None
         self._plugin_version = plugin_version()
+        # The phase gate running now: each `kc project test` it ran → what
+        # its own output counted (`_gate_cmd_outcome`, D7).
+        self._gate_counts: dict[str, list[dict]] = {}
 
     def reroot(self, root: Path) -> None:
         """Point the loop at another code repo — the dry run's, started from
@@ -7921,7 +7944,9 @@ class RunLoop:
         verb is not run again and is recorded `covered` — each verb apart,
         and not where an accept ruling kept the bare lint from running.
         `gate_projects` records each project's command and outcome, the
-        Target first, and the gate's outcome is theirs together: red on any
+        Target first — and its `test_counts`, what that test's own output
+        counted, where it counted any (D7) — and the gate's outcome is
+        theirs together: red on any
         red, else green on any green, else nothing ran. A whole-repo Target
         — a repo path, a GitHub clone — records its one entry.
 
@@ -8024,6 +8049,7 @@ class RunLoop:
         t0 = time.monotonic()
         projects: list[dict] = []
         runs: list[tuple[str, str]] = []   # (outcome, tail), command by command
+        self._gate_counts = {}
         with open(log_path, "w") as log_file:
             if check is not None:
                 log_file.write(f"=== the spec check: `{' '.join(check)}` "
@@ -8062,6 +8088,10 @@ class RunLoop:
                     phase_id, migration, target, log_file, log_path, runner,
                     runs))
         duration_s = int(time.monotonic() - t0)
+        for p in projects:
+            if p["project"] not in (SPEC_CHECK_NAME, MIGRATION_CHECK_NAME) \
+                    and (counts := self._gate_counts.get(p["cmd"])):
+                p["test_counts"] = counts
         gate_cmd = " ".join(argv or check)
         ps["gate_cmd"] = gate_cmd
         ps["gate_projects"] = projects
@@ -8467,6 +8497,9 @@ class RunLoop:
         never red, so a red here is a command just run, and only a red asks
         kc for a kill since `began`, taken just before it ran.
 
+        A `kc project test`'s counts, read from its own output before the
+        inline (`_test_counts`, D7), go into `_gate_counts` by its command.
+
         `kc` False is a command that is not kc's — the spec check, which
         exits 0 clean, 1 on a problem and 2 on a usage error, read as kc's
         codes are. Its red is never a missing tool, nor a service's kill: it
@@ -8485,6 +8518,11 @@ class RunLoop:
             ) from None
         log_file.flush()
         tail = _last_line(log_path)
+        key = gate_cmd_key(argv) if kc else None
+        if key is not None and key[1] == "test" and (counts := _test_counts(
+                log_path, start, _file_size(log_path), key[0],
+                target.git_root.name)):
+            self._gate_counts[" ".join(argv)] = counts
         try:
             if returncode == 2:
                 raise Bailout(
@@ -11137,7 +11175,9 @@ class RunLoop:
         A `test` row also keeps what its suite left, as `artifacts`
         (`_keep_test_artifacts`, AIWF-94), and a red one re-runs once, as
         `rerun` (`_rerun_sweep_test`); lint and build are deterministic and
-        do neither. `component_dir` is the component's directory as kc
+        do neither. A `test` row's `test_counts` is what its log counted
+        (`_test_counts`, D7), where it counted any. `component_dir` is the
+        component's directory as kc
         lists it — where the suite's own files are looked for first."""
         argv = ["kc", "project", verb, "--project", component]
         log_path = out_dir / f"{root.name}_{component}_{verb}.log"
@@ -11162,6 +11202,9 @@ class RunLoop:
                "log": str(log_path), "duration_s": duration_s}
         if tool is not None:
             row["tool"] = tool
+        if verb == "test" and (counts := _test_counts(
+                log_path, component=component, repo=root.name)):
+            row["test_counts"] = counts
         if snapshot is None:
             return row
         row["artifacts"] = self._keep_test_artifacts(
@@ -12756,7 +12799,9 @@ class RunLoop:
         what the sweep had run green minutes before, over a diff of docs
         alone): on the same tree, or, for `test`, with only Markdown files
         changed since. Its line in the log names that run, and the history
-        row's `reused` maps the command to it.
+        row's `reused` maps the command to it. The row's `test_counts` is
+        what each `test` that ran counted in its own output, where any
+        counted (D7).
 
         The fixes pass runs it too, on its own branch: `stem`, `role` and
         `label` name its log files, its history rows and its log lines, and
@@ -12782,6 +12827,7 @@ class RunLoop:
                     if ruled_verbs else "") + ")")
         t0 = time.monotonic()
         outcomes: dict[str, str] = {}
+        counts: list[dict] = []
         with open(log_path, "w") as log_file:
             for verb in SWEEP_VERBS:
                 if verb in ruled_verbs:
@@ -12793,7 +12839,7 @@ class RunLoop:
                 for label, argv, component in commands:
                     outcomes[label] = self._doc_gate_cmd(
                         argv, verb, component, rulings, log_file, log_path,
-                        tree=tree, reused=reused)
+                        tree=tree, reused=reused, counts=counts)
                     if " ".join(argv) not in reused:
                         ran.append((argv, outcomes[label], str(log_path)))
                     if outcomes[label] == "red":
@@ -12812,9 +12858,10 @@ class RunLoop:
         except OSError:
             pass
         self._note_greens(self.repo_root, tree, ran, f"{role} r{n}")
+        extra = {**({"reused": reused} if reused else {}),
+                 **({"test_counts": counts} if counts else {})}
         row = self._record(None, role, n, outcome, tail, None, duration_s,
-                           extra={"reused": reused} if reused else None,
-                           started_at=started)
+                           extra=extra or None, started_at=started)
         self._keep_gate(role, row, log_path)
         empty = [verb for verb, o in outcomes.items() if o == "nothing_ran"]
         unrunnable = [verb for verb, o in outcomes.items()
@@ -12834,14 +12881,16 @@ class RunLoop:
                       component: str | None,
                       rulings: list[tuple[Ruling, ResolvedTarget]],
                       log_file, log_path: Path, tree: str | None = None,
-                      reused: dict[str, str] | None = None) -> str:
+                      reused: dict[str, str] | None = None,
+                      counts: list[dict] | None = None) -> str:
         """One doc-gate command's outcome, the rulings applied: `waived`
         (not run) or `accepted` (ran red) where a ruling covers it. A red
         that is cexec's missing-tool line is `unrunnable` — logged, not red,
         so the gate goes on: nothing a doc writer changed can fix it. One an
         earlier green of this run stands for on `tree` (`_earlier_green`)
         is not run either: its outcome is that run's, and `reused` maps the
-        command to the run."""
+        command to the run. A `test` that ran adds to `counts` what its own
+        output counted (`_test_counts`, D7)."""
         if component is not None and verb == "test":
             waiver = self._covering([(r, t) for r, t in rulings
                                      if r.kind == "gate"],
@@ -12870,6 +12919,10 @@ class RunLoop:
                 details=f"doc-phase gate `{' '.join(argv)}` exceeded "
                         f"{GATE_TIMEOUT}s (output in {log_path})",
             ) from None
+        if verb == "test" and counts is not None:
+            log_file.flush()
+            counts.extend(_test_counts(log_path, start, _file_size(log_path),
+                                       component, self.repo_root.name) or ())
         outcome = kc_outcome(rc)
         if outcome == "red":
             log_file.flush()
@@ -13593,8 +13646,9 @@ class RunLoop:
         nothing in it bails: a gate that times out is red. An earlier green
         of this run that stands for the command on the branch's tree
         (`_earlier_green`, AIWF-142) is taken in place of running it, the
-        row's `reused` naming its run. The fixes pass's run is a `role` of
-        its own, its log lines `label`'s."""
+        row's `reused` naming its run; one that ran keeps what its log
+        counted as `test_counts`, where it counted any (D7). The fixes
+        pass's run is a `role` of its own, its log lines `label`'s."""
         target = self._repo_path_target(str(root), root)
         ruling = self._gate_ruling(target)
         if ruling is not None:
@@ -13633,6 +13687,10 @@ class RunLoop:
                     except subprocess.TimeoutExpired:
                         log_file.write(f"→ timed out after {GATE_TIMEOUT}s\n")
                         returncode = None
+            key = gate_cmd_key(argv)
+            counts = (_test_counts(log_path, component=key and key[0],
+                                   repo=root.name)
+                      if found is None else None)
             if found is None and returncode is not None:
                 self._note_greens(root, tree,
                                   [(argv, kc_outcome(returncode),
@@ -13651,7 +13709,8 @@ class RunLoop:
         row = self._record(None, role, n, outcome, tail, None, duration_s,
                            extra={"repo": str(root),
                                   **({"reused": {" ".join(argv): found["run"]}}
-                                     if found is not None else {})},
+                                     if found is not None else {}),
+                                  **({"test_counts": counts} if counts else {})},
                            started_at=started)
         self._keep_gate(role, row, log_path)
         self.log(f"{label} gate #{n} → {GATE_OUTCOME_LABELS[outcome]} "

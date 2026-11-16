@@ -20264,6 +20264,184 @@ def test_every_sweep_that_ran_is_kept_whole_by_its_run_number():
                            / f"r{sweep['run']}.json").read_text()) == sweep
 
 
+
+# -- the driver counts each suite's tests (D7) ---------------------------------
+#
+# The operator ruled (2026-11-16) that the driver reads each suite's test count
+# from its own gate log as the gate ends, and keeps it in the gate's record and
+# in each sweep row: `test_counts`, only where a count was read.
+
+KC_FULL_NAME = "test-20261101T000000Z-1.log"
+
+
+def kc_pytest_out(component, tests, full="/tmp/kc/project/" + KC_FULL_NAME):
+    """What `kc project test` prints for one component whose pytest ran
+    `tests` tests green: its head, the runner's summary, its full output."""
+    return (f"{component}: cexec x uv run pytest    [  OK  ]\n"
+            f"==== {tests} passed in 1.0s ====\n"
+            f"full output: {full}\n")
+
+
+def counted(repo, component, tests, passed=True):
+    return {"repo": Path(repo).name, "component": component, "tests": tests,
+            "passed": passed}
+
+
+class KcCountsLoop(SweepRunLoop):
+    """SweepRunLoop whose kc runs print, after their exit line, what
+    `outputs` holds for their (component, verb) — the component None for a
+    whole-repo command."""
+
+    def __init__(self, slice_dir, script, outputs=None, **kw):
+        super().__init__(slice_dir, script, **kw)
+        self.outputs = dict(outputs or {})
+
+    def _gate_exec(self, argv, cwd, log_file):
+        rc_ = super()._gate_exec(argv, cwd, log_file)
+        text = self.outputs.get(run_loop.gate_cmd_key(argv))
+        if text:
+            log_file.write(text)
+        return rc_
+
+
+def counts_raise(text, component=None):
+    raise ValueError("the reader broke")
+
+
+def test_a_sweep_test_row_keeps_the_tests_its_log_counted():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        r = KcCountsLoop(slice_dir, [], repo_root=repo, outputs={
+            ("backend", "test"): kc_pytest_out("backend", 12),
+            # a summary in a lint's output is never a test count
+            ("backend", "lint"): "==== 3 passed in 0.1s ====\n",
+            ("frontend", "test"): "frontend: cexec x pnpm test    [  OK  ]\n"})
+        sweep, _ = run_sweep(r, repo, {"backend": Path(repo),
+                                       "frontend": Path(repo)})
+        assert sweep["outcome"] == "green"
+        assert sweep_row(sweep, "backend")["test_counts"] == [
+            counted(repo, "backend", 12)]
+        for component, verb in (("backend", "lint"), ("backend", "build"),
+                                ("frontend", "test"), ("frontend", "lint")):
+            assert "test_counts" not in sweep_row(sweep, component, verb)
+        assert r.state["gate_sweep"] == sweep
+        kept = json.loads((rec.of(slice_dir) / "sweeps" / "r1.json")
+                          .read_text())
+        assert sweep_row(kept, "backend")["test_counts"] == [
+            counted(repo, "backend", 12)]
+
+
+def test_a_phase_gate_entry_keeps_its_own_tests_count_not_the_inlined_repeat():
+    """kc's full output, inlined after the command, repeats the summary: the
+    entry counts the command's own lines once. The lint beside it is never
+    counted."""
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        full = kc_full_log(tmp, KC_FULL_NAME,
+                           "collected 12 items\n==== 12 passed in 1.0s ====\n")
+        r = KcCountsLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo, outputs={
+            (PROJECT, "test"): kc_pytest_out(PROJECT, 12, full),
+            (PROJECT, "lint"): "==== 7 passed in 0.1s ====\n"},
+            lint_rcs=[0])
+        assert run_to_exit(r) == 0
+        state = load_state(slice_dir)
+        log = Path(state["phases"]["1"]["gate_green_log"]).read_text()
+        assert log.count("==== 12 passed in 1.0s ====") == 2   # the repeat
+        [entry] = state["phases"]["1"]["gate_projects"]
+        assert entry["test_counts"] == [counted(repo, PROJECT, 12)]
+        assert "test_counts" not in entry["lint"]
+        rows = rows_of(slice_dir, "gate")
+        assert rows and all(row["projects"][0]["test_counts"]
+                            == [counted(repo, PROJECT, 12)] for row in rows)
+        kept = json.loads((rec.of(slice_dir) / "gates" / "P1_gate_1.json")
+                          .read_text())
+        assert kept["projects"][0]["test_counts"] == [
+            counted(repo, PROJECT, 12)]
+
+
+def test_a_doc_gate_keeps_the_tests_each_component_counted():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo = make_slice(tmp)
+        loop = RunLoop(slice_dir, resume=False)
+        loop.repo_root = repo
+        loop.state = {"history": []}
+
+        def fake_exec(argv, log_file):
+            if argv[2] == "test":
+                log_file.write(kc_pytest_out("backend", 12)
+                               + kc_pytest_out("frontend", 5))
+            else:
+                log_file.write("==== 3 passed in 0.1s ====\n")
+            return 0
+
+        loop._doc_gate_exec = fake_exec
+        green, log_path = loop._run_doc_gate({"gate_runs": 0})
+        assert green
+        row = loop.state["history"][-1]
+        assert row["outcome"] == "green"
+        assert row["test_counts"] == [counted(repo, "backend", 12),
+                                      counted(repo, "frontend", 5)]
+        kept = json.loads((rec.of(slice_dir) / "gates" / "doc-gate_1.json")
+                          .read_text())
+        assert kept == {**row, "log": str(log_path)}
+        # a test that counted nothing: no field
+        loop._doc_gate_exec = lambda argv, log_file: 0
+        assert loop._run_doc_gate({"gate_runs": 0})[0]
+        assert "test_counts" not in loop.state["history"][-1]
+
+
+class WrapCountsLoop(ScriptedLoop):
+    """ScriptedLoop whose wrap-up gate prints a pytest summary per
+    component."""
+
+    def _wrap_up_gate_exec(self, argv, cwd, log_file):
+        rc_ = super()._wrap_up_gate_exec(argv, cwd, log_file)
+        log_file.write(kc_pytest_out("chart", 4))
+        return rc_
+
+
+def test_a_wrap_up_gate_keeps_the_tests_its_command_counted():
+    with tempfile.TemporaryDirectory() as tmp, records_in(tmp) as rec:
+        slice_dir, repo, sib = sibling_phase_slice(tmp)
+        plant_waiting(slice_dir)
+        r = WrapCountsLoop(slice_dir, wrap_script(repo, sib), repo_root=repo,
+                           wrap_ups=[(WRAP_DONE, wrap_up_fixes(repo, sib))])
+        assert run_to_exit(r) == 0
+        [gate] = rows_of(slice_dir, "wrap-up-gate")
+        assert gate["outcome"] == "green"
+        assert gate["test_counts"] == [counted(sib, "chart", 4)]
+        kept = json.loads((rec.of(slice_dir) / "gates"
+                           / "wrap-up-gate_1.json").read_text())
+        assert kept["test_counts"] == gate["test_counts"]
+
+
+def test_a_reader_that_raises_leaves_no_count_and_every_outcome_recorded():
+    with tempfile.TemporaryDirectory() as tmp, \
+            patched(run_loop.labeller_tools, kc_test_counts=counts_raise):
+        slice_dir, repo = make_slice(tmp)
+        r = KcCountsLoop(slice_dir, [], repo_root=repo, outputs={
+            (PROJECT, "test"): kc_pytest_out(PROJECT, 12)})
+        sweep, _ = run_sweep(r, repo)
+        assert sweep["outcome"] == "green"
+        assert all("test_counts" not in row for row in sweep["results"])
+        r.state["history"] = []
+        r._doc_gate_exec = lambda argv, log_file: log_file.write(
+            kc_pytest_out(PROJECT, 12)) and 0
+        green, _ = RunLoop._run_doc_gate(r, {"gate_runs": 0})
+        assert green and r.state["history"][-1]["outcome"] == "green"
+        assert "test_counts" not in r.state["history"][-1]
+    with tempfile.TemporaryDirectory() as tmp, \
+            patched(run_loop.labeller_tools, kc_test_counts=counts_raise):
+        slice_dir, repo = make_slice(tmp)
+        r = KcCountsLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo, outputs={
+            (PROJECT, "test"): kc_pytest_out(PROJECT, 12)})
+        assert run_to_exit(r) == 0
+        [entry] = load_state(slice_dir)["phases"]["1"]["gate_projects"]
+        assert entry["outcome"] == "green" and "test_counts" not in entry
+
+
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
               if k.startswith("test_") and callable(v)]
