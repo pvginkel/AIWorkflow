@@ -4,6 +4,21 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — The plan-writer asks for a fake the testing rules leave to the operator on its first pass (v0.10.82)
+
+AIWF-207, from the debrief of IoTSupport slice 001's planning. Its writer planned P3's proof on
+an extension of the esptool-js mock that fakes the USB port, with no ask, and the reviewer found
+that no ruling approved it under TEST-1 ("No mock or fake without the operator's approval"). The
+reviewer had raised the same ask on PilotApp slice 029.
+
+- **plan-writer § Method** now says that a phase whose proof needs a new or extended mock or
+  fake, where the project's testing rules ask the operator's approval for one, is a question of
+  the writer's first pass, put up through the `questions` verdict. An extension counts as new
+  where it fakes something its approval does not name. A fake that a ruling in plan.md or the
+  design record already approves needs no ask; the phase cites the approval instead.
+- **plan-writer § Hand-back**'s `questions` bullet names such an approval among what only the
+  operator rules on. The plan-reviewer is unchanged, and its check stays as the backstop.
+
 ## 2026-11-16 — A continuation commits the documents Pilot wrote back with the ruling (v0.10.81)
 
 AIWF-206, from the debrief of IoTSupport slice 001's planning. Its continuation sub-agent

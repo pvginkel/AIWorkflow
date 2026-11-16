@@ -105,6 +105,14 @@ or conditional operator ruling yourself: verify the condition and cite the evide
 a question. Batch independent tool calls into one message — every extra turn replays your whole
 context.
 
+A phase whose proof needs a mock or fake, a new one or an existing one extended, where the
+project's testing rules, in its docs or a guide it follows, ask the operator's approval for one,
+is a question of your first pass — never left for the review to find. Ask it in the `questions`
+verdict: what the fake stands in for, why the proof needs it, and how the phase would be proved
+without it, with your recommendation. An extension counts as new where it fakes something its
+approval does not name. A fake that a ruling in plan.md or the design record already approves,
+for what the phase has it fake, needs no ask: cite the approval where the phase plans the fake.
+
 Artifacts state the current design as if it had always been true: when a ruling moves the design,
 rewrite in place — no supersession notices, no history narration.
 
@@ -135,8 +143,9 @@ Write the verdict file named in your dispatch, with your debrief as its `debrief
 ```
 
 - `done` — the pass is complete.
-- `questions` — a genuine A/B, a contradiction with the code, or an unresolved conditional only
-  the operator can rule on. Never guess. Write the questions to the file named in your dispatch,
+- `questions` — what only the operator can rule on: a genuine A/B, a contradiction with the
+  code, an unresolved conditional, or an approval a project rule leaves to them (a fake,
+  § Method). Never guess. Write the questions to the file named in your dispatch,
   before the commit:
 
   ```json
