@@ -108,10 +108,11 @@ WHY_STEPS = [STEPS[0], dict(STEPS[1], state="done"),
               "why": WHY}]
 
 
-def pilot_tools(why=True, debrief=True):
+def pilot_tools(why=True, debrief=True, subject=True):
     """A Pilot's `tools/list`, as its MCP server lists the `pilot-work`
     tools: `set_progress`'s steps with a `why` where `why`, and
-    `register_debrief` where `debrief` — production's today has neither."""
+    `register_debrief` where `debrief`, its `subject` and `completes` where
+    `subject` — a Pilot before the debrief's notice lists neither."""
     step = {"properties": {
         "code": {"maxLength": 64, "minLength": 1, "type": "string"},
         "label": {"maxLength": 120, "minLength": 1, "type": "string"},
@@ -131,8 +132,19 @@ def pilot_tools(why=True, debrief=True):
             "required": ["steps"], "type": "object"}},
         {"name": "set_progress_step", "inputSchema": {"type": "object"}}]
     if debrief:
-        tools.append({"name": "register_debrief",
-                      "inputSchema": {"type": "object"}})
+        fields = {
+            "debrief": {"maxLength": 16000, "minLength": 1, "type": "string"},
+            "entries": {"items": {"$ref": "#/$defs/DebriefEntry"},
+                        "maxItems": 500, "minItems": 1, "type": "array"}}
+        if subject:
+            fields["subject"] = {
+                "anyOf": [{"maxLength": 120, "minLength": 1, "type": "string"},
+                          {"type": "null"}], "default": None}
+            fields["completes"] = {"default": True, "type": "boolean"}
+        tools.append({"name": "register_debrief", "inputSchema": {
+            "$defs": {"DebriefEntry": {"type": "object"}},
+            "properties": fields, "required": ["debrief", "entries"],
+            "type": "object"}})
     return tools
 
 
@@ -321,7 +333,8 @@ def test_a_why_is_sent_only_when_asked_and_held_to_pilots_limits():
 def test_discover_reads_what_a_pilot_takes_from_its_own_tools_list():
     opener = FakeOpener(listed())
     answer = pp.discover(URL, TOKEN, opener)
-    assert answer == pp.Answer(pp.OK, takes=pp.Takes(why=True, debrief=True))
+    assert answer == pp.Answer(pp.OK, takes=pp.Takes(why=True, debrief=True,
+                                                     subject=True))
     [(request, timeout)] = opener.requests
     assert json.loads(request.data) == {
         "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
@@ -329,12 +342,15 @@ def test_discover_reads_what_a_pilot_takes_from_its_own_tools_list():
     assert request.get_header("Authorization") == f"Bearer {TOKEN}"
     assert request.get_header("Accept") == "application/json, text/event-stream"
     assert timeout == pp.TIMEOUT
-    # production's today takes neither, and each is read apart
-    for takes in ({"why": False, "debrief": False}, {"why": False},
-                  {"debrief": False}):
+    # a Pilot that takes none of them, and each read apart
+    for takes, want in (
+            ({"why": False, "debrief": False}, pp.NOTHING),
+            ({"why": False}, pp.Takes(debrief=True, subject=True)),
+            ({"debrief": False}, pp.Takes(why=True)),
+            ({"subject": False}, pp.Takes(why=True, debrief=True))):
         assert pp.discover(URL, TOKEN, FakeOpener(listed(**takes))).takes \
-            == pp.Takes(**{"why": True, "debrief": True, **takes}), takes
-    assert pp.NOTHING == pp.Takes(why=False, debrief=False)
+            == want, takes
+    assert pp.NOTHING == pp.Takes(why=False, debrief=False, subject=False)
     # a schema with the step inline, and a JSON answer
     inline = [{"name": "set_progress", "inputSchema": {"properties": {
         "steps": {"items": {"properties": {"code": {}, "why": {}}}}}}}]
@@ -344,7 +360,24 @@ def test_discover_reads_what_a_pilot_takes_from_its_own_tools_list():
                        "result": {"tools": pilot_tools()}})
     assert pp.discover(URL, TOKEN, FakeOpener(FakeResponse(
         body, content_type="application/json"))).takes == \
-        pp.Takes(why=True, debrief=True)
+        pp.Takes(why=True, debrief=True, subject=True)
+
+
+def test_the_debrief_takes_a_subject_only_where_both_its_fields_are_listed():
+    def takes(schema):
+        tools = [{"name": "register_debrief", "inputSchema": schema}]
+        return pp.discover(URL, TOKEN, FakeOpener(listed(tools))).takes
+    both = {"debrief": {}, "entries": {}, "subject": {}, "completes": {}}
+    assert takes({"properties": both}) == pp.Takes(debrief=True, subject=True)
+    for schema in (
+            {"properties": {"debrief": {}, "entries": {}, "subject": {}}},
+            {"properties": {"debrief": {}, "entries": {}, "completes": {}}},
+            {"properties": {"debrief": {}, "entries": {}}},
+            {"$defs": {"Arguments": {"properties": both}}},
+            {"properties": []}, {}, "not a schema", None):
+        assert takes(schema) == pp.Takes(debrief=True), schema
+    assert pp.discover(URL, TOKEN, FakeOpener(listed(
+        [{"name": "register_debrief"}]))).takes == pp.Takes(debrief=True)
 
 
 def test_a_schema_that_does_not_give_a_step_a_why_takes_none():
@@ -935,10 +968,10 @@ def refused(text):
     return FakeResponse(sse([f"data: {json.dumps(message)}"]))
 
 
-def hand_off(opener, env=ENV, words="It went well."):
+def hand_off(opener, env=ENV, words="It went well.", **about):
     lines = []
     answer = pp.hand_off_debrief(words, ENTRIES, lines.append, environ=env,
-                                 opener=opener)
+                                 opener=opener, **about)
     return answer, lines
 
 
@@ -952,6 +985,41 @@ def test_the_debrief_is_one_call_of_register_debrief_to_a_pilot_that_lists_it():
         "debrief": "It went well.", "entries": ENTRIES}}
     assert opener.requests[1][1] == pp.DEBRIEF_TIMEOUT
     assert lines == ["Debrief handed to Pilot: 2 entries stored"]
+
+
+SUBJECT = "Slice 058 · The search page"
+
+
+def test_the_subject_and_completes_go_to_a_pilot_that_lists_them():
+    for completes in (False, True):
+        opener = FakeOpener(listed(), stored(2))
+        answer, lines = hand_off(opener, subject=SUBJECT, completes=completes)
+        assert (answer.kind, answer.entries) == (pp.OK, 2)
+        assert json.loads(opener.requests[1][0].data)["params"] == {
+            "name": "register_debrief", "arguments": {
+                "debrief": "It went well.", "entries": ENTRIES,
+                "subject": SUBJECT, "completes": completes}}
+        assert lines == ["Debrief handed to Pilot: 2 entries stored"]
+
+
+def test_a_pilot_that_does_not_list_them_stores_the_debrief_as_before():
+    for opener, about in (
+            (FakeOpener(listed(subject=False), stored(2)),
+             {"subject": SUBJECT, "completes": False}),
+            (FakeOpener(listed(), stored(2)), {"completes": False}),
+            (FakeOpener(listed(), stored(2)), {})):
+        answer, lines = hand_off(opener, **about)
+        assert (answer.kind, answer.entries) == (pp.OK, 2), about
+        assert json.loads(opener.requests[1][0].data)["params"] == {
+            "name": "register_debrief", "arguments": {
+                "debrief": "It went well.", "entries": ENTRIES}}, about
+        assert lines == ["Debrief handed to Pilot: 2 entries stored"]
+    # no subject, no `completes`: Pilot refuses it false without one
+    opener = FakeOpener(stored(2))
+    assert pp.send_debrief("w", ENTRIES, URL, TOKEN, opener,
+                           completes=False).kind == pp.OK
+    assert json.loads(opener.requests[0][0].data)["params"]["arguments"] == {
+        "debrief": "w", "entries": ENTRIES}
 
 
 def test_a_pilot_that_lists_no_register_debrief_is_sent_none():

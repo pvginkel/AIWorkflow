@@ -45,7 +45,10 @@ and the loop's figures under STAGE_PROMPT (`input`), and gives its own
 debrief, which the file keeps as `debrief` beside `entries` (`give`). Then
 the whole goes to Pilot, held to its limits (`for_pilot`), once, where that
 Pilot takes it (pilot_progress.hand_off_debrief); the slice's log says what
-came of it. Run on its own, over a slice folder:
+came of it. It goes with the slice as its subject (`subject_of`), the same
+at both stages, the planning's not completing it and the run's completing
+it (COMPLETES), so that Pilot carries one slice's debriefs in one notice.
+Run on its own, over a slice folder:
 
     debrief.py input <slice-dir> --stage run|plan
     debrief.py give <slice-dir> --stage run|plan       (the words on stdin)
@@ -60,6 +63,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -74,6 +78,13 @@ STAGES = {
     "run": ("state.json", RUN_FILE, "log.txt"),
     "plan": ("plan_state.json", PLAN_FILE, "plan_log.txt"),
 }
+
+# Whether a stage's debrief completes its slice's account: the run's does,
+# and the planning's is carried with it.
+COMPLETES = {"run": True, "plan": False}
+
+# A slice folder's number: digits, then `_` or the end of the name.
+SLICE_NUM_RE = re.compile(r"^(\d+)(?:_|$)")
 
 GROUND = "ground"
 PREPARER = "plan-preparer"
@@ -122,6 +133,7 @@ ENTRIES_MAX = 500
 SECTION_MAX = 120
 ROLE_MAX = 64
 WORDS_MAX = 4_000
+SUBJECT_MAX = 120
 
 
 def role_name(role: str, phase: str | None = None) -> str:
@@ -325,15 +337,53 @@ def for_pilot(data: dict) -> tuple[str | None, list[dict]]:
     return words, entries
 
 
-def hand_off(path: Path, log_line) -> pilot_progress.Answer | None:
+def slice_title(slice_dir: Path) -> str | None:
+    """slice.md's `# ` title, its frontmatter skipped; None where the folder
+    has no slice.md or it has no title."""
+    try:
+        lines = (Path(slice_dir) / "slice.md").read_text().splitlines()
+    except FileNotFoundError:
+        return None
+    start = 0
+    if lines and lines[0] == "---":
+        close = next((i for i in range(1, len(lines)) if lines[i] == "---"),
+                     None)
+        if close is not None:
+            start = close + 1
+    for line in lines[start:]:
+        if line.startswith("# ") and line[2:].strip():
+            return line[2:].strip()
+    return None
+
+
+def subject_of(slice_dir: Path) -> str | None:
+    """What the slice's debriefs are an account of, as Pilot titles their
+    notice: `Slice <number> · <title>`, the folder's number and slice.md's
+    title, cut to SUBJECT_MAX with an ellipsis. The folder keeps its name
+    and slice.md from the planning to the run, so both stages give the
+    same. None where the folder's name opens on no number or slice.md has
+    no title."""
+    match = SLICE_NUM_RE.match(Path(os.path.abspath(slice_dir)).name)
+    title = slice_title(slice_dir)
+    if match is None or title is None:
+        return None
+    return _clip(" ".join(f"Slice {match.group(1)} · {title}".split()),
+                 SUBJECT_MAX)
+
+
+def hand_off(path: Path, log_line, subject: str | None = None,
+             completes: bool = True) -> pilot_progress.Answer | None:
     """The file handed to Pilot whole, as `for_pilot` holds it, where the
-    Pilot of this process's environment takes it; what came of it is one
-    line through `log_line`. ValueError where the file holds no debrief of
-    the stage session's."""
+    Pilot of this process's environment takes it, with `subject` and
+    `completes` where it takes them; what came of it is one line through
+    `log_line`. ValueError where the file holds no debrief of the stage
+    session's."""
     words, entries = for_pilot(_load(Path(path)))
     if words is None:
         raise ValueError(f"no debrief of the stage session's in {path}")
-    return pilot_progress.hand_off_debrief(words, entries, log_line)
+    return pilot_progress.hand_off_debrief(words, entries, log_line,
+                                           subject=subject,
+                                           completes=completes)
 
 
 # -- what the stage session reads ----------------------------------------------
@@ -527,7 +577,8 @@ def _paths(slice_dir: str, stage: str) -> tuple[Path, Path, Path]:
     return slice_dir / state_name, slice_dir / file_name, slice_dir / log_name
 
 
-def _hand_off(path: Path, log_path: Path) -> int:
+def _hand_off(slice_dir: str, stage: str) -> int:
+    _, path, log_path = _paths(slice_dir, stage)
     said: list[str] = []
 
     def log_line(text: str) -> None:
@@ -535,7 +586,8 @@ def _hand_off(path: Path, log_path: Path) -> int:
         pilot_progress.append_log_line(log_path, text, "debrief")
 
     try:
-        hand_off(path, log_line)
+        hand_off(path, log_line, subject_of(Path(slice_dir)),
+                 COMPLETES[stage])
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
@@ -555,14 +607,13 @@ def cmd_input(args) -> int:
 
 
 def cmd_give(args) -> int:
-    _, path, log_path = _paths(args.slice_dir, args.stage)
+    _, path, _ = _paths(args.slice_dir, args.stage)
     give(path, _words_in())
-    return _hand_off(path, log_path)
+    return _hand_off(args.slice_dir, args.stage)
 
 
 def cmd_hand_off(args) -> int:
-    _, path, log_path = _paths(args.slice_dir, args.stage)
-    return _hand_off(path, log_path)
+    return _hand_off(args.slice_dir, args.stage)
 
 
 def cmd_ground(args) -> int:

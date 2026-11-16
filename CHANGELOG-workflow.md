@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — The stages name the slice as their debrief's subject (v0.10.86)
+
+PilotApp's slice 060, the debrief as an open notice (P-363, F92.14): Pilot places one notice per
+slice at its run's end, carrying the planning's debrief and the run's, and the plugin names the
+slice so that the two come together.
+
+- **`debrief.py give|hand-off` hands the slice over as the debrief's `subject`**, `Slice <number>
+  · <title>` from the folder's number and `slice.md`'s `# ` title, cut to 120 characters, the same
+  at both stages, with `completes` false at the planning and true at the run (`subject_of`,
+  `COMPLETES`). A folder with no number opening its name or no title in `slice.md` names no
+  subject, and sends neither field.
+- **The two fields go only to a Pilot that lists them**: `pilot_progress.discover` reads whether
+  `register_debrief`'s input schema has both `subject` and `completes` (`Takes.subject`), as it
+  reads a step's `why` off `set_progress`, and `hand_off_debrief` sends them only there. A Pilot
+  before the notice stores the debrief as before. No skill changes: the stages run the same
+  commands.
+
 ## 2026-11-16 — The code-writer is back on Opus at `xhigh` (v0.10.85)
 
 The operator switched the code-writer's Fable run off again.

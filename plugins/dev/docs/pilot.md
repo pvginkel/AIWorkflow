@@ -114,7 +114,14 @@ The hand-off is one `tools/call` of `pilot-work`'s `register_debrief` (PilotApp'
 with the session's words and every entry as the file has it, less its `step`. It goes only where
 the Pilot's own `tools/list` names the tool, as a step's why does, and is held to its limits on
 this side: a text past its limit cut with an ellipsis, and past 500 entries the first 500, the
-file keeping them all. It is best-effort. What came of it is one `[debrief]` line in the slice's
+file keeping them all. With them goes the slice as the debrief's `subject`, `Slice <number> ·
+<title>` from the folder's number and `slice.md`'s `# ` title, cut to 120 characters, the same at
+both stages since the folder keeps its name and `slice.md` from the planning to the run, and
+`completes`, false at the planning and true at the run, so that Pilot carries a slice's debriefs in
+one notice at its run's end. The two go only where the tool's input schema lists both, as a step's
+why goes only where `set_progress` lists one; a Pilot that lists neither, or a folder that names no
+subject, with no number opening its name or no title in its `slice.md`, gets the debrief without
+them. It is best-effort. What came of it is one `[debrief]` line in the slice's
 log, `log.txt` or `plan_log.txt`: the entries Pilot stored, or why none were handed — no
 credentials, no answer, a Pilot that lists no `register_debrief`, a refusal, a second call's
 among them. The debrief stays in the folder either way, committed with it, and the stage's

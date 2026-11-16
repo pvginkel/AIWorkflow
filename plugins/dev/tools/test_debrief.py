@@ -457,6 +457,101 @@ def test_a_pilot_that_does_not_take_it_leaves_the_debrief_in_the_folder():
         assert code == 0 and "no PILOT_TOKEN/PILOT_MCP_URL" in out
 
 
+SLICE_MD = """---
+issue: P-58
+# the card triage filed it under
+---
+
+# The search page
+
+The intent.
+
+# Not the title
+"""
+
+
+def test_the_subject_is_the_slices_number_and_title_at_both_stages():
+    with tempfile.TemporaryDirectory() as tmp:
+        backlog = Path(tmp) / "slices" / "backlog" / "058_the_search_page"
+        backlog.mkdir(parents=True)
+        (backlog / "slice.md").write_text(SLICE_MD)
+        want = "Slice 058 · The search page"
+        assert debrief.subject_of(backlog) == want
+        # the planning's folder, the run's and the closed one's alike
+        for there in (Path(tmp) / "slices" / "058_the_search_page",
+                      Path(tmp) / "slices" / "completed" / "058_the_search_page"):
+            there.parent.mkdir(parents=True, exist_ok=True)
+            backlog = backlog.rename(there)
+            assert debrief.subject_of(there) == want
+            assert debrief.subject_of(str(there) + "/") == want
+        # no frontmatter, a title with spaces in it, a folder named by its
+        # number alone
+        (backlog / "slice.md").write_text("\n#  The   search\tpage \n")
+        assert debrief.subject_of(backlog) == want
+        bare = Path(tmp) / "7"
+        bare.mkdir()
+        (bare / "slice.md").write_text("# A\n")
+        assert debrief.subject_of(bare) == "Slice 7 · A"
+        # held to Pilot's limit
+        (backlog / "slice.md").write_text("# " + "t" * 200 + "\n")
+        subject = debrief.subject_of(backlog)
+        assert len(subject) == debrief.SUBJECT_MAX == 120
+        assert subject.startswith("Slice 058 · ttt") and subject.endswith("…")
+        # none without a number or a title
+        for name, text in (("182b_letter", "# A\n"), ("search_page", "# A\n"),
+                           ("059_untitled", "---\n# A\n---\nNo title.\n"),
+                           ("060_blank", "# \n"), ("061_no_file", None)):
+            folder = Path(tmp) / name
+            folder.mkdir()
+            if text is not None:
+                (folder / "slice.md").write_text(text)
+            assert debrief.subject_of(folder) is None, name
+
+
+SUBJECT_LISTED = {"jsonrpc": "2.0", "id": 1, "result": {"tools": [
+    {"name": "set_progress", "inputSchema": {}},
+    {"name": "register_debrief", "inputSchema": {"properties": {
+        "debrief": {}, "entries": {}, "subject": {}, "completes": {}}}}]}}
+STORED = {"jsonrpc": "2.0", "id": 1, "result": {
+    "content": [], "structuredContent": {"entries": 4}}}
+
+
+def test_each_stage_gives_the_slice_as_its_subject_the_run_completing_it():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "058_the_search_page"
+        folder.mkdir()
+        (folder / "slice.md").write_text(SLICE_MD)
+        for name in (debrief.PLAN_FILE, debrief.RUN_FILE):
+            entries_file(folder, name, debrief="Given.")
+        for argv, completes in (
+                (["give", str(folder), "--stage", "plan"], False),
+                (["give", str(folder), "--stage", "run"], True),
+                (["hand-off", str(folder), "--stage", "plan"], False),
+                (["hand-off", str(folder), "--stage", "run"], True)):
+            opener = JsonOpener(SUBJECT_LISTED, STORED)
+            code, out, _ = run_cli(argv, "It went.", opener)
+            assert (code, out) == (
+                0, "Debrief handed to Pilot: 4 entries stored\n"), argv
+            arguments = opener.bodies[1]["params"]["arguments"]
+            assert (arguments["subject"], arguments["completes"]) == (
+                "Slice 058 · The search page", completes), argv
+            assert set(arguments) == {"debrief", "entries", "subject",
+                                      "completes"}
+        # a Pilot that lists neither field gets the debrief as before
+        opener = JsonOpener(LISTED, STORED)
+        assert run_cli(["give", str(folder), "--stage", "plan"], "It went.",
+                       opener)[0] == 0
+        assert set(opener.bodies[1]["params"]["arguments"]) == {
+            "debrief", "entries"}
+        # a folder that names no subject sends neither, the planning's too
+        (folder / "slice.md").unlink()
+        opener = JsonOpener(SUBJECT_LISTED, STORED)
+        assert run_cli(["give", str(folder), "--stage", "plan"], "It went.",
+                       opener)[0] == 0
+        assert set(opener.bodies[1]["params"]["arguments"]) == {
+            "debrief", "entries"}
+
+
 def test_the_commands_refuse_what_they_cannot_do():
     with tempfile.TemporaryDirectory() as tmp:
         entries_file(tmp)
