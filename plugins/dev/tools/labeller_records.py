@@ -14,7 +14,8 @@ writes nothing anywhere.
     records.unit_rows(keys) / records.stage_rows(stage_key) / records.test_runs(stage_key)
     records.stamp_inputs(tie, conversation) / records.stamp(tie, conversation)
 
-The open points' defaults (§ Open points) each sit in one constant below.
+The operator's rulings on the driver's Test Runs and R5 (t17-labeller-2.md D7, D8) each sit
+in one constant below.
 """
 
 import base64
@@ -36,7 +37,7 @@ import labeller_vocab  # noqa: E402
 
 _OWN_OUTCOMES = labeller_vocab.UNIT_OUTCOMES
 
-# ---------------------------------------------------------------- the open points' defaults
+# ---------------------------------------------------------------- the rulings' switches
 
 # The driver's Test Runs: a gate's and a sweep's record gives one per suite whose test count the
 # driver kept (`test_counts`; t17-labeller-2.md D7, ruled 2026-11-16); one without gives none.
