@@ -17,9 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# O8, open: whether a red gate counts among the error events. Until it is
-# ruled the build gives no value; this is the one place to set it.
-GATE_RED_IS_ERROR = None
+# Whether a red gate counts among the error events: not an error, the workflow
+# doing its job (t17-labeller-2.md D9, ruled 2026-11-16).
+GATE_RED_IS_ERROR = False
 
 # (code, name, description[, extra facts]) per list, in the page's order.
 _WORK_UNIT_KIND = (

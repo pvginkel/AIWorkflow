@@ -85,7 +85,7 @@ def test_the_extra_facts_sit_beside_their_values():
     assert all(v["home"] == "/etc/claude-code/CLAUDE.md" for v in vocab.lists()["rule"])
     (gate_red,) = vocab.lists()["event_kind"]
     assert gate_red["code"] == "gate_red" and "is_error" in gate_red
-    assert gate_red["is_error"] is vocab.GATE_RED_IS_ERROR  # O8, open: none until ruled
+    assert gate_red["is_error"] is False  # D9: a red gate is not an error
     assert all(v["name"] == v["code"] for v in vocab.lists()["build_result"])
 
 
