@@ -506,6 +506,14 @@ def test_the_subject_is_the_slices_number_and_title_at_both_stages():
             if text is not None:
                 (folder / "slice.md").write_text(text)
             assert debrief.subject_of(folder) is None, name
+        # none where slice.md cannot be read or decoded, as with no slice.md
+        undecodable = Path(tmp) / "062_undecodable"
+        undecodable.mkdir()
+        (undecodable / "slice.md").write_bytes(b"# Caf\xe9 page\n")
+        unreadable = Path(tmp) / "063_unreadable"
+        (unreadable / "slice.md").mkdir(parents=True)
+        for folder in (undecodable, unreadable):
+            assert debrief.subject_of(folder) is None, folder.name
 
 
 SUBJECT_LISTED = {"jsonrpc": "2.0", "id": 1, "result": {"tools": [
@@ -543,11 +551,19 @@ def test_each_stage_gives_the_slice_as_its_subject_the_run_completing_it():
                        opener)[0] == 0
         assert set(opener.bodies[1]["params"]["arguments"]) == {
             "debrief", "entries"}
-        # a folder that names no subject sends neither, the planning's too
+        # a folder that names no subject sends neither, the planning's too,
+        # and so does one whose slice.md cannot be decoded
         (folder / "slice.md").unlink()
         opener = JsonOpener(SUBJECT_LISTED, STORED)
         assert run_cli(["give", str(folder), "--stage", "plan"], "It went.",
                        opener)[0] == 0
+        assert set(opener.bodies[1]["params"]["arguments"]) == {
+            "debrief", "entries"}
+        (folder / "slice.md").write_bytes(b"# Caf\xe9 page\n")
+        opener = JsonOpener(SUBJECT_LISTED, STORED)
+        assert run_cli(["hand-off", str(folder), "--stage", "run"],
+                       opener=opener) == (
+            0, "Debrief handed to Pilot: 4 entries stored\n", "")
         assert set(opener.bodies[1]["params"]["arguments"]) == {
             "debrief", "entries"}
 

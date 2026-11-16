@@ -4,6 +4,15 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-16 — A slice.md that cannot be read names no subject (v0.10.87)
+
+PilotApp's slice 060 close-out, B2.
+
+- **`debrief.slice_title` takes a `slice.md` it cannot read or decode as one with no title**, as
+  `run_loop.slice_card_and_title` does (`OSError`, `UnicodeDecodeError`, read as UTF-8). Such a
+  folder names no subject, and `give` and `hand-off` hand the debrief over without it, where
+  0.10.86 stopped them with an error and the debrief stayed in the folder.
+
 ## 2026-11-16 — The stages name the slice as their debrief's subject (v0.10.86)
 
 PilotApp's slice 060, the debrief as an open notice (P-363, F92.14): Pilot places one notice per

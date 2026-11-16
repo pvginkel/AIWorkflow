@@ -339,10 +339,12 @@ def for_pilot(data: dict) -> tuple[str | None, list[dict]]:
 
 def slice_title(slice_dir: Path) -> str | None:
     """slice.md's `# ` title, its frontmatter skipped; None where the folder
-    has no slice.md or it has no title."""
+    has no slice.md to read, as `run_loop.slice_card_and_title` reads it, or
+    it has no title."""
     try:
-        lines = (Path(slice_dir) / "slice.md").read_text().splitlines()
-    except FileNotFoundError:
+        lines = (Path(slice_dir) / "slice.md").read_text(
+            encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
         return None
     start = 0
     if lines and lines[0] == "---":
