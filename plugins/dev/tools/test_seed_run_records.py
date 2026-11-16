@@ -17,6 +17,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -327,7 +328,7 @@ def test_each_seeded_slice_gets_its_slice_json_with_every_fact_its_folder_holds(
                 {"class": "operator", "headline": "A choice", "gap": False}]},
             "code_review_findings": {"2": {"1": [FINDING]}},
             "close_out": {"entries": 3, "fixed": 1, "carded": 1, "closed": 1}}
-        assert "1 slice.json copied (1 naming a card), 0 kept" in out
+        assert "1 slice.json copied (1 naming a card, 0 its filing commit), 0 kept" in out
 
 
 def test_a_fact_the_folder_does_not_hold_is_left_out():
@@ -346,7 +347,7 @@ def test_a_fact_the_folder_does_not_hold_is_left_out():
         assert {k: v for k, v in facts_of(data, "002_bare").items()
                 if k not in ("updated_at", "plugin_version")} == {
             "slice": "002_bare", "card": None, "title": "Only a title"}
-        assert "2 slice.json copied (0 naming a card), 0 kept" in out
+        assert "2 slice.json copied (0 naming a card, 0 its filing commit), 0 kept" in out
 
 
 def test_a_slice_json_that_is_there_is_never_replaced_and_a_dry_run_counts_it():
@@ -359,12 +360,60 @@ def test_a_slice_json_that_is_there_is_never_replaced_and_a_dry_run_counts_it():
         add_slice(repo, "completed", "002_two", state={})
         code, out = run("--dry-run", "--data-dir", data, repo)
         assert code == 0, out
-        assert "1 slice.json to copy (0 naming a card), 1 kept" in out
+        assert "1 slice.json to copy (0 naming a card, 0 its filing commit), 1 kept" in out
         assert not records(data, "002_two").exists()
         code, out = run("--data-dir", data, repo)
         assert code == 0, out
         assert (live / "slice.json").read_text() == '{"card": "P-live"}'
-        assert "1 slice.json copied (0 naming a card), 1 kept" in out
+        assert "1 slice.json copied (0 naming a card, 0 its filing commit), 1 kept" in out
+
+
+def commit(repo: Path, message: str, when: str) -> str:
+    env = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when,
+           "GIT_AUTHOR_NAME": "A", "GIT_AUTHOR_EMAIL": "a@example.org",
+           "GIT_COMMITTER_NAME": "A", "GIT_COMMITTER_EMAIL": "a@example.org"}
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", message], check=True, env=env)
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True,
+                          capture_output=True, text=True, env=env).stdout.strip()
+
+
+def test_each_slice_json_notes_the_commit_that_filed_its_slice():
+    """D8: the first commit that added the slice's slice.md, moved folders included; an
+    earlier seed's slice.json gains that key alone."""
+    with workspace() as (_, repo, data):
+        one = add_slice(repo, "backlog", "001_one", state={})
+        write(one, "slice.md", "# One\n")
+        two = add_slice(repo, "backlog", "002_two", state={})
+        write(two, "slice.md", "# Two\n")
+        filed = commit(repo, "Triage: file slices 001 and 002", "2026-10-01T09:00:00+00:00")
+        write(one, "slice.md", "# One, reworded\n")
+        commit(repo, "Reword 001", "2026-10-02T09:00:00+00:00")
+        (repo / "slices" / "completed").mkdir(exist_ok=True)
+        os.rename(one, repo / "slices" / "completed" / "001_one")
+        commit(repo, "Complete 001", "2026-10-05T09:00:00+00:00")
+        assert run_loop.SLICE_FACTS == "slice.json"
+        live = records(data, "002_two")
+        live.mkdir(parents=True)
+        (live / "slice.json").write_text('{"card": "P-live"}')
+        code, out = run("--dry-run", "--data-dir", data, repo)
+        assert code == 0, out
+        assert "1 slice.json to copy (0 naming a card, 1 its filing commit), " \
+               "1 kept (1 its filing commit to add)" in out
+        assert json.loads((live / "slice.json").read_text()) == {"card": "P-live"}
+        code, out = run("--data-dir", data, repo)
+        assert code == 0, out
+        got = facts_of(data, "001_one")["filing_commit"]
+        assert datetime.fromisoformat(got["authored_at"]) == \
+            datetime.fromisoformat("2026-10-01T09:00:00+00:00")
+        want = {"hash": filed, "subject": "Triage: file slices 001 and 002",
+                "authored_at": got["authored_at"]}
+        assert got == want
+        assert json.loads((live / "slice.json").read_text()) == {"card": "P-live",
+                                                                 "filing_commit": want}
+        code, out = run("--data-dir", data, repo)
+        assert "0 kept (0 its filing commit added)" not in out
+        assert "2 kept (0 its filing commit added)" in out
 
 
 if __name__ == "__main__":

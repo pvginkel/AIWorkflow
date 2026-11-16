@@ -14,8 +14,11 @@ Beside each slice's state files it writes the slice's `slice.json`, the facts
 the loops keep of a live run, read from the slice folder: its card and title
 (`slice.md`), its plan's size (`plan.md` less the phases the run appended, and
 `verification.json`), the plan review's findings per round and the code
-review's per phase and round where the history rows carry none, and the
-close-out's fates (`close-out.json`). A fact the folder does not hold, or
+review's per phase and round where the history rows carry none, the
+close-out's fates (`close-out.json`), and the commit that filed the slice:
+the spec repo's first commit that added its `slice.md` (`filing_commit`, its
+hash, subject and author time; t17-labeller-2.md D8), which the labeller
+finds the slice's triage session by. A fact the folder does not hold, or
 holds in a shape that does not read, is left out, never guessed.
 
     seed_run_records.py [--groups DIR] [--data-dir DIR] [--dry-run] SPEC_REPO...
@@ -32,8 +35,9 @@ fresh clone: a completed slice's state files are committed in its spec repo.
 It never replaces a record that is there: a record the driver keeps of a live
 run, or an earlier seed's, wins, and is counted as kept. So it can be re-run,
 and a re-run adds only what the first could not see (a slice that finished on
-the old plugin since). The groups are hand-edited, so their copies are
-replaced on every run.
+the old plugin since), and the filing commit to a slice.json an earlier seed
+wrote without one: that key alone, the rest of the file as it is. The groups
+are hand-edited, so their copies are replaced on every run.
 
 Exit 0 when everything given was read, 1 when anything was reported failed or
 skipped for a fault, 2 when no data folder can be told (before anything is
@@ -45,6 +49,7 @@ import contextlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -183,10 +188,42 @@ def code_review_findings(slice_dir: Path) -> dict:
     return {pid: _by_round(rounds) for pid, rounds in found.items()}
 
 
-def slice_facts(slice_dir: Path) -> dict:
+FILING_KEY = "filing_commit"
+
+
+def slice_md_adds(repo: Path) -> dict[str, dict]:
+    """slice folder → the first commit that added a `slice.md` under it in
+    the spec repo's history: `{"hash", "subject", "authored_at"}`, as the
+    prototype's `_slice_md_adds` reads it — without rename detection, which
+    a partial clone would fetch blobs for, so a moved folder's first add is
+    its filing. None where git cannot read the history."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "log", "--no-renames", "--diff-filter=A",
+             "--format=@@%H%x09%aI%x09%s", "--name-only", "--", "slices"],
+            capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    found: dict[str, dict] = {}
+    commit = None
+    for line in out.stdout.splitlines():
+        if line.startswith("@@"):
+            sha, _, rest = line[2:].partition("\t")
+            when, _, subject = rest.partition("\t")
+            commit = {"hash": sha, "subject": subject, "authored_at": when}
+        elif line.endswith("/slice.md") and commit is not None:
+            # git log is newest first: the oldest add stays
+            found[line.split("/")[-2]] = commit
+    return found
+
+
+def slice_facts(slice_dir: Path, filing: dict | None = None) -> dict:
     """The facts a live run's slice.json holds, as far as the slice folder
     tells them: `slice`, `card` and `title`, `plan`, the two findings keys
-    and `close_out`, and the write's stamp."""
+    and `close_out`, and the write's stamp; and `filing_commit`, the commit that
+    filed it, where its spec repo's history names one."""
     facts: dict = {"slice": slice_dir.name, **run_loop.slice_card_and_title(slice_dir)}
     state = run_loop._read_json(slice_dir / "state.json")
     appended = state.get("appended_phases") if isinstance(state, dict) else None
@@ -202,19 +239,43 @@ def slice_facts(slice_dir: Path) -> dict:
         counts = close_out.fates(store)
         if counts is not None:
             facts["close_out"] = counts
+    if filing:
+        facts[FILING_KEY] = dict(filing)
     return run_loop.stamped(facts)
 
 
-def seed_facts(slice_dir: Path, records: Path, dry_run: bool) -> tuple[str, str | None]:
-    """The slice's slice.json into its records unless one is there:
-    (`written`, `kept` or `failed`, the card it names or why it failed)."""
+def add_filing(dest: Path, filing: dict | None, dry_run: bool) -> bool:
+    """The filing commit into a slice.json that is there and has none, that
+    key alone: whether it was added (or, on a dry run, would be)."""
+    if not filing:
+        return False
     try:
-        facts = slice_facts(slice_dir)
+        doc = json.loads(dest.read_bytes())
+    except (OSError, ValueError):
+        return False
+    if not isinstance(doc, dict) or doc.get(FILING_KEY):
+        return False
+    if not dry_run:
+        doc[FILING_KEY] = dict(filing)
+        try:
+            place_over(dest, (json.dumps(doc, indent=2) + "\n").encode())
+        except OSError:
+            return False
+    return True
+
+
+def seed_facts(slice_dir: Path, records: Path, dry_run: bool,
+               filing: dict | None = None) -> tuple[str, str | None]:
+    """The slice's slice.json into its records unless one is there:
+    (`written`, `kept`, `filed` — kept, its filing commit added — or
+    `failed`, the card it names or why it failed)."""
+    try:
+        facts = slice_facts(slice_dir, filing)
     except Exception as e:
         return "failed", f"not read ({type(e).__name__}: {e})"
     dest = records / run_loop.SLICE_FACTS
     if dest.exists():
-        return "kept", None
+        return ("filed" if add_filing(dest, filing, dry_run) else "kept"), None
     if not dry_run:
         try:
             records.mkdir(parents=True, exist_ok=True)
@@ -235,9 +296,13 @@ def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], boo
     name = spec_repo_name(root)
     seen: dict[str, str] = {}       # slice folder name → its status folder
     folders = copied = kept = skipped = 0
-    facts_written = facts_kept = cards = 0
+    facts_written = facts_kept = cards = filed = added = 0
     notes: list[str] = []
     failed = False
+    adds = slice_md_adds(repo)
+    if adds is None:
+        adds = {}
+        notes.append(f"  {name}: git cannot read its history — no filing commits")
     for status in status_order(slices):
         for slice_dir in sorted(p for p in status.iterdir() if p.is_dir()):
             files = [slice_dir / f for f in STATE_FILES if (slice_dir / f).is_file()]
@@ -257,16 +322,19 @@ def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], boo
                 notes.append(f"  {status.name}/{slice_dir.name}: its records folder "
                              "cannot be told — skipped")
                 continue
-            outcome, said = seed_facts(slice_dir, records, dry_run)
+            filing = adds.get(slice_dir.name)
+            outcome, said = seed_facts(slice_dir, records, dry_run, filing)
             if outcome == "failed":
                 failed = True
                 notes.append(f"  {status.name}/{slice_dir.name}/{run_loop.SLICE_FACTS}: "
                              f"{said} — skipped")
-            elif outcome == "kept":
+            elif outcome in ("kept", "filed"):
                 facts_kept += 1
+                added += outcome == "filed"
             else:
                 facts_written += 1
                 cards += said is not None
+                filed += filing is not None
             for src in files:
                 rel = f"{status.name}/{slice_dir.name}/{src.name}"
                 raw, why = read_state(src)
@@ -293,9 +361,11 @@ def seed_repo(repo: Path, data_dir: Path, dry_run: bool) -> tuple[list[str], boo
                     failed = True
                     notes.append(f"  {rel}: not written to {dest} ({e}) — skipped")
     verb = "to copy" if dry_run else "copied"
+    adding = "to add" if dry_run else "added"
     head = (f"{name} ({repo}): {folders} slices seen, {copied} files {verb}, "
             f"{kept} kept (already there), {skipped} skipped; {facts_written} "
-            f"{run_loop.SLICE_FACTS} {verb} ({cards} naming a card), {facts_kept} kept")
+            f"{run_loop.SLICE_FACTS} {verb} ({cards} naming a card, {filed} its filing "
+            f"commit), {facts_kept} kept ({added} its filing commit {adding})")
     return [head, *notes], failed
 
 
