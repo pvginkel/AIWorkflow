@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 import tomllib
 import zlib
@@ -29,12 +30,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS_DIR))
+
+import labeller_vocab  # noqa: E402
+
+_OWN_OUTCOMES = labeller_vocab.UNIT_OUTCOMES
 
 # ---------------------------------------------------------------- the open points' defaults
-
-# O1: Unit Outcome for the history's other words. A (role, word) -> outcome entry here folds
-# that word into the record's six; every pair in neither table has no outcome.
-OTHER_OUTCOMES: dict[tuple[str, str], str] = {}
 
 # O4: the driver's gate and sweep records hold no test count, so no Test Run is handed from
 # them. True hands them with `tests` null.
@@ -57,14 +59,15 @@ GATE_ROLES = ("gate", "doc-gate", "wrap-up-gate", "fixes-gate", "fixes-doc-gate"
 GATE_TITLES = {"gate": "Gate", "doc-gate": "Doc gate", "wrap-up-gate": "Wrap-up gate",
                "fixes-gate": "Fixes gate", "fixes-doc-gate": "Fixes doc gate"}
 NOT_UNITS = ("orchestrator",)
-# § Work Units, `outcome`: the history's word -> the Unit Outcome, per role.
-OUTCOMES: dict[tuple[str, str], str] = {
-    **{(r, "done"): "done" for r in ("code-writer", "plan-writer", "doc-writer", "wrap-up")},
-    ("code-writer", "question"): "question",
-    ("code-reviewer", "signoff"): "signoff",
-    ("code-reviewer", "issues"): "issues",
-    ("plan-reviewer", "issues"): "issues",
-    **{(r, w): w for r in (*GATE_ROLES, "sweep") for w in ("green", "red")},
+# § Work Units, `outcome` (t17-labeller-2.md D5, ruled 2026-11-16): a history word that means one
+# of the record's six takes it; every other word the driver writes is a Unit Outcome of its own,
+# declared in labeller_vocab (`UNIT_OUTCOMES`); a word in neither has none.
+FOLDED_OUTCOMES: dict[str, str] = {
+    "done": "done", "clean": "done",
+    "signoff": "signoff", "go": "signoff",
+    "issues": "issues", "critical": "issues", "findings": "issues",
+    "red": "red", "green": "green",
+    "question": "question", "questions": "question",
 }
 CLOSE_OUT_MEASURES = (("entries", "close_out_entries"), ("fixed", "close_out_fixed"),
                       ("carded", "close_out_carded"), ("closed", "close_out_closed"))
@@ -1016,8 +1019,8 @@ class _Units:
 
     @staticmethod
     def _outcome(r: dict) -> str | None:
-        pair = (r["role"], r["outcome"])
-        return OUTCOMES.get(pair) or OTHER_OUTCOMES.get(pair)
+        word = r["outcome"]
+        return FOLDED_OUTCOMES.get(word) or (word if word in _OWN_OUTCOMES else None)
 
     def stage_keys(self) -> list[str]:
         return list(self.members)

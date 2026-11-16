@@ -55,7 +55,37 @@ _UNIT_OUTCOME = (
     ("green", "Green", "A gate or sweep that passed."),
     ("question", "Question", "A writer that stopped on a question only the operator can "
                              "answer."),
+    # The history's other words, each a value of its own (t17-labeller-2.md D5, ruled
+    # 2026-11-16); the words that mean one of the six above fold into it
+    # (labeller_records.FOLDED_OUTCOMES).
+    ("blocked", "Blocked", "A session that stopped on something it could not get past, and "
+                           "said so."),
+    ("session_limit", "Session limit", "A session the account's usage limit ended; the "
+                                       "driver waited it out and dispatched the round again."),
+    ("timeout", "Timed out", "A session that ran past its time limit."),
+    ("invalid", "No verdict", "A session that wrote no verdict, or one that does not read."),
+    ("nothing_ran", "Nothing ran", "A gate or sweep in which no command ran a check: neither "
+                                   "green nor red."),
+    ("complete", "Complete", "A completion consult: the plan describes no outstanding work."),
+    ("appended", "Appended", "A completion consult that appended phases for outstanding "
+                             "work."),
+    ("flake", "Flake", "A completion consult that took every red as a flake, for the "
+                       "test-fixer."),
+    ("fix_round", "Fix round", "A review consult that funded another fix round."),
+    ("merge", "Merge", "A review consult that merged the phase, its findings recorded."),
+    ("bail", "Bail", "A consult that stopped the slice."),
+    ("proceed", "Proceed", "An older checkpoint consult: the rest of the plan holds."),
+    ("amend", "Amend", "An older checkpoint consult that changed the rest of the plan."),
+    ("another_round", "Another round", "An older review consult that granted one more review "
+                                       "round."),
+    ("merge_flagged", "Merge flagged", "An older review consult that merged, the findings "
+                                       "flagged for the operator."),
+    ("fix_tasks", "Fix tasks", "An older verification consult: the findings block, and fix "
+                               "tasks are owed."),
+    ("retry", "Retry", "An older consult that dispatched a blocked agent once more."),
 )
+# Every Unit Outcome's code, for the run records' reading of a history word.
+UNIT_OUTCOMES = frozenset(row[0] for row in _UNIT_OUTCOME)
 
 _REWORK_KIND = (
     ("rework", "Rework", "Work done again: a second round, an appended phase, a consult "

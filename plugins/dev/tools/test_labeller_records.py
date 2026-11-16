@@ -409,7 +409,8 @@ def test_an_unfinished_stage_has_no_end():
             assert unit(records, key)["outcome"] is None
 
 
-def test_the_outcomes_and_o1():
+def test_the_outcomes_fold_where_alike():
+    """D5: a word meaning one of the six takes it; the driver's other words are their own."""
     with data_folder() as data:
         records, _ = load(data)
         got = {k: unit(records, f"{K}|{k}")["outcome"] for k in (
@@ -420,15 +421,23 @@ def test_the_outcomes_and_o1():
         assert got == {"run|P1|code-writer|1": "done", "run|P1|gate|1": "red",
                        "run|P1|gate|2": "green", "run|P1|code-reviewer|1": "issues",
                        "run|P1|code-reviewer|2": "signoff", "run|P2|code-writer|1": "question",
-                       "run|sweep|1": "red", "run|test-fixer|1": None, "run|consult|1": None,
-                       "run|test-agent|1": None, "plan|plan-reviewer|2": None,
-                       "run|doc-gate|1": "green"}
-        lr.OTHER_OUTCOMES[("plan-reviewer", "go")] = "signoff"
-        try:
-            records, _ = load(data)
-            assert unit(records, f"{K}|plan|plan-reviewer|2")["outcome"] == "signoff"
-        finally:
-            lr.OTHER_OUTCOMES.clear()
+                       "run|sweep|1": "red", "run|test-fixer|1": "done",
+                       "run|consult|1": "complete", "run|test-agent|1": "done",
+                       "plan|plan-reviewer|2": "signoff", "run|doc-gate|1": "green"}
+    out = lr._Units._outcome
+    for word, want in (("go", "signoff"), ("questions", "question"), ("clean", "done"),
+                       ("findings", "issues"), ("critical", "issues"), ("blocked", "blocked"),
+                       ("session_limit", "session_limit"), ("nothing_ran", "nothing_ran"),
+                       ("amend", "amend"), ("proceed", "proceed"), ("merge", "merge"),
+                       ("unheard_of", None), (None, None)):
+        assert out({"role": "any", "outcome": word}) == want, word
+    import labeller_vocab
+    codes = [v["code"] for v in labeller_vocab.lists()["unit_outcome"]]
+    assert codes[:6] == ["done", "signoff", "issues", "red", "green", "question"]
+    assert not set(lr.FOLDED_OUTCOMES) - set(codes[:6]) - {"clean", "go", "critical",
+                                                            "findings", "questions"}
+    assert set(lr.FOLDED_OUTCOMES.values()) <= set(codes[:6])
+    assert not set(codes[6:]) & set(lr.FOLDED_OUTCOMES)
 
 
 def test_rework_kind():
