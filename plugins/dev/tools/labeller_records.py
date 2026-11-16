@@ -1192,6 +1192,15 @@ class Records:
         """Every spec repo the records name: the `runs/` folders and the groups' `spec_repo`."""
         return {sl.spec for sl in self.slices.values()} | set(self.group_files)
 
+    @property
+    def spec_digest(self) -> str:
+        """The digest of `spec_repos`, which every stamp covers: where a `git add -A` breaches
+        `no_git_add_all` (D10) is a label of any transcript."""
+        got = self.__dict__.get("_spec_dig")
+        if got is None:
+            got = self._spec_dig = _digest(sorted(self.spec_repos))
+        return got
+
     def _units(self, slice_key: str) -> _Units | None:
         sl = self.slices.get(slice_key)
         return sl.compiled() if sl is not None else None
@@ -1601,8 +1610,8 @@ class Records:
     def stamp_inputs(self, tie: Tie, context: dict | None = None) -> dict:
         """The run records' half of the stamp's inputs (§ The stamp): the rows of every unit
         the tie's labels may name and every unit above them, for an anchor its stages' units
-        and their Test Runs, the role, the adopted group, each named slice's state, and the
-        Pilot bit. `context` is `{"conversation", "transcript", "pilot"}`; where its `pilot`
+        and their Test Runs, the role, the adopted group, each named slice's state, the Pilot
+        bit and the spec repos (`spec_digest`). `context` is `{"conversation", "transcript", "pilot"}`; where its `pilot`
         set is not the one the tie was taken under, the tie is taken again under it, in
         place, so that the caller's tie and these inputs agree."""
         context = context or {}
@@ -1616,7 +1625,8 @@ class Records:
                     tie.__dict__.update(fresh.__dict__)
             elif isinstance(pilot, frozenset):
                 self._pilot = pilot         # the same set: the next asks compare by identity
-        recs: dict = {"role": tie.role, "group": tie.adopted_group, "pilot": tie.pilot}
+        recs: dict = {"role": tie.role, "group": tie.adopted_group, "pilot": tie.pilot,
+                      "spec_repos": self.spec_digest}
         if tie.named:
             recs["named"] = []
             for name in tie.named:

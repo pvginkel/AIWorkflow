@@ -845,6 +845,17 @@ def test_a_named_tie_stamps_alike_from_the_file_and_from_the_held_stamp():
         assert records.stamp(held, ctx(c, MAIN)) != before
 
 
+def test_a_new_spec_repo_changes_every_stamp():
+    """D10 reads the spec repos for any transcript's `git add -A`, so every stamp covers them."""
+    with data_folder() as data:
+        records, _ = load(data)
+        before = {s: stamp_of(records, s) for s in ("cw-1", "orch-run", "nobody")}
+        build(data, "001_two", run=run_state([]), spec="BarSpecs")
+        records, _ = load(data)
+        after = {s: stamp_of(records, s) for s in before}
+        assert all(after[s] != before[s] for s in before)
+
+
 def test_stamp_inputs_are_json_and_small():
     with data_folder() as data:
         records, _ = load(data)

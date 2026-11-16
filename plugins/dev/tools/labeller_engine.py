@@ -176,9 +176,8 @@ class _Job:
         # the Launches whose first Call carries the opening prompt's digest sections
         self.digest_launches = {n for n, u in self.unit_of.items() if u and self.dispatch}
         self.spec_repos = frozenset()
-        if getattr(self.tools, "ADD_ALL_ONLY_IN_SPEC_REPO", False) and hasattr(records,
-                                                                               "spec_repos"):
-            self.spec_repos = frozenset(records.spec_repos())
+        if getattr(self.tools, "ADD_ALL_ONLY_IN_SPEC_REPO", False):
+            self.spec_repos = frozenset(getattr(records, "spec_repos", None) or ())
 
     # -- the checkpoint
 

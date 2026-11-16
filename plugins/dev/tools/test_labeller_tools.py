@@ -173,28 +173,26 @@ def test_a_poll_loop_breaches_no_sleep_poll_and_a_settle_sleep_does_not():
 
 
 def test_staging_everything_breaches_no_git_add_all():
-    for cmd in ("git add -A", "git add --all", "git add .", "git -C /work/Orchard add -A",
+    spec = {"cwd": "/work/OrchardSpecs", "spec_repos": frozenset({"OrchardSpecs"})}
+    for cmd in ("git add -A", "git add --all", "git add .", "git -C /work/OrchardSpecs add -A",
                 "git commit -am 'x'", "git commit -a -m x", "git commit --all -m x",
                 "cd /work/OrchardSpecs && git add -A && git commit -m x"):
-        assert "no_git_add_all" in _bash(cmd)["rules"], cmd
+        assert "no_git_add_all" in _bash(cmd, **spec)["rules"], cmd
     for cmd in ("git add a.py b.py", "git commit -m 'a.' -- a.py", "git commit --amend",
                 "git commit -m add", "echo 'git add -A'"):
-        assert "no_git_add_all" not in _bash(cmd)["rules"], cmd
+        assert "no_git_add_all" not in _bash(cmd, **spec)["rules"], cmd
 
 
-def test_o9_is_one_switch():
-    """Until O9 is ruled any tree counts; ruled the other way, only a spec repo's."""
-    cmd = "cd /work/Orchard && git add -A"
-    spec = "cd /work/OrchardSpecs && git add -A"
-    saved = lt.ADD_ALL_ONLY_IN_SPEC_REPO
-    try:
-        lt.ADD_ALL_ONLY_IN_SPEC_REPO = True
-        repos = frozenset({"OrchardSpecs"})
-        assert _bash(cmd, spec_repos=repos)["rules"] == []
-        assert _bash(spec, spec_repos=repos)["rules"] == ["no_git_add_all"]
-    finally:
-        lt.ADD_ALL_ONLY_IN_SPEC_REPO = saved
-    assert _bash(cmd)["rules"] == ["no_git_add_all"]
+def test_staging_everything_counts_only_in_a_spec_repo():
+    """D10: a breach only where the tree is a spec repo's, its linked worktree included."""
+    repos = frozenset({"OrchardSpecs"})
+    assert _bash("cd /work/Orchard && git add -A", spec_repos=repos)["rules"] == []
+    assert _bash("git add -A", spec_repos=repos)["rules"] == []          # the cwd, a code repo
+    assert _bash("cd /work/OrchardSpecs && git add -A", spec_repos=repos)["rules"] == \
+        ["no_git_add_all"]
+    assert _bash("git -C /work/scratch/worktrees/OrchardSpecs/P2 add .",
+                 spec_repos=repos)["rules"] == ["no_git_add_all"]
+    assert _bash("cd /work/OrchardSpecs && git add -A")["rules"] == []   # no spec repo known
 
 
 def test_a_tail_of_a_file_a_running_background_task_writes():

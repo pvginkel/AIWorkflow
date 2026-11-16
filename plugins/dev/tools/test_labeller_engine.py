@@ -614,6 +614,26 @@ def test_parts_give_the_whole_under_the_real_tool_rules():
         E.TOOLS = StubTools
 
 
+def test_a_git_add_all_breaches_only_in_a_spec_repo_the_records_name():
+    """D10: the engine hands the real rules the run records' spec repos."""
+    import labeller_tools
+
+    class SpecRecords(Records):
+        spec_repos = {"OrchardSpecs"}
+
+    s = Script()
+    s.prompt("Commit it.")
+    s.turn(bash("cd /work/Orchard && git add -A", ""))
+    s.turn(bash("cd /work/OrchardSpecs && git add -A", ""))
+    s.turn(text="Done.")
+    E.TOOLS = labeller_tools
+    try:
+        rows = _whole(s, records=SpecRecords())["labels"]["tool_calls"]
+    finally:
+        E.TOOLS = StubTools
+    assert [r["rules"] for r in rows] == [[], ["no_git_add_all"]]
+
+
 # -- the classes are turn_profile's --------------------------------------------
 
 def test_a_calls_class_is_classify_turns_for_the_file():

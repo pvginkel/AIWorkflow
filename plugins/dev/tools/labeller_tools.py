@@ -46,9 +46,10 @@ GATE_RED = "gate_red"
 DIGEST_SECTION = "digest_section"
 BUILD_RESULTS = ("SUCCESS", "FAILURE", "ABORTED", "UNSTABLE", "NOT_BUILT")
 
-# O9 (labeller.md § Open points): whether `no_git_add_all` counts in any tree or only in a spec
-# repo's. Until it is ruled, any tree. `_add_all_counts` is the one place that reads it.
-ADD_ALL_ONLY_IN_SPEC_REPO = False
+# `no_git_add_all` counts only where the tree is a spec repo's, the one tree the workflow knows
+# is shared (t17-labeller-2.md D10, ruled 2026-11-16). `_add_all_counts` is the one place that
+# reads it.
+ADD_ALL_ONLY_IN_SPEC_REPO = True
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ class ToolCtx:
     - `background_writes`: the files a background task of the same Launch is still writing — the
       output file its notification will name, and the `>` / `tee` targets of its command — for
       the tasks not yet notified as ended (`no_tail_on_background_log`).
-    - `spec_repos`: the spec repos' names, read only where O9 rules a spec repo alone.
+    - `spec_repos`: the spec repos' names, where a `git add -A` is a breach (D10).
     """
 
     cwd: str | None = None
@@ -384,7 +385,7 @@ def repo_of(path: str | None) -> str | None:
 
 
 def _add_all_counts(tree: str | None, ctx: ToolCtx) -> bool:
-    """O9's one place: whether a `git add -A` in this tree is a breach."""
+    """D10's one place: whether a `git add -A` in this tree is a breach."""
     return not ADD_ALL_ONLY_IN_SPEC_REPO or repo_of(tree) in ctx.spec_repos
 
 
