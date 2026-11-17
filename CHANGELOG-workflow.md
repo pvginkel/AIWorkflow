@@ -4,6 +4,18 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-17 — The test-agent reads a failed poll before it polls again (v0.10.88)
+
+AIWF-224, from the debrief of PilotApp's slice 060 run: the test-agent polled a testing route
+sixty times with a misnamed field in its body, its loop waiting for a 201 alone, before it read
+the 400.
+
+- **`test-agent` rule 7: a polling loop names the endpoint's documented "not yet" answer and
+  waits through it only**; on any other answer it stops, and the agent reads the status and body
+  before it polls again. A 400, or any 4xx the endpoint does not use for "not yet", means the
+  request is wrong and ends the wait. Not every 4xx: slice 060's own route answers 403 (no turn
+  running) and 409 (no environment yet) while the state it waits for comes.
+
 ## 2026-11-16 — A slice.md that cannot be read names no subject (v0.10.87)
 
 PilotApp's slice 060 close-out, B2.

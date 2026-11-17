@@ -50,6 +50,13 @@ pre-authorize stays operator-gated.
 6. **Batch independent tool calls into one message; keep suite output quiet.** Run suites `-q`
    (the pass/fail tail is all you need), pair independent commands in one message, and read
    command output directly from the call that produced it.
+7. **Read the first failed poll before you poll again.** A loop that waits on an endpoint for a
+   state to come — a testing route, a deploy, a job — names the answer the endpoint documents for
+   "not yet" and waits through that answer only. On any other answer it stops, and you read that
+   answer's status and body before you poll again. A 400, or any 4xx the endpoint does not use for
+   "not yet", means the request is wrong — a misnamed field, a wrong id — and ends the wait: no
+   wait fixes it. A loop that waits for the success code alone polls a malformed request to its
+   cap.
 
 ## Hand-back
 
