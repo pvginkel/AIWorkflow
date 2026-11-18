@@ -4,6 +4,16 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-18 — The code-writer and the code-reviewer run Fable 5.2 at `high` (v0.10.89)
+
+The operator's last Fable run: the code-writer alone did not use up the Fable budget last time, so
+the code-reviewer runs Fable with it.
+
+- **The code-writer and the code-reviewer run `("claude-fable-5-2", "high")`.** Those are their
+  `MODELS` entries in `run_loop.py`; every other role is unchanged. The next writer and reviewer
+  dispatched after this release run Fable, while a loop already running keeps the models it
+  imported.
+
 ## 2026-11-17 — The test-agent reads a failed poll before it polls again (v0.10.88)
 
 AIWF-224, from the debrief of PilotApp's slice 060 run: the test-agent polled a testing route

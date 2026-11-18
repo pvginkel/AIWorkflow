@@ -145,8 +145,8 @@ Four ideas span the files and explain most design choices:
 3. **Every agent is a headless `kc session`,** spawned through `run_loop.run_kc_session` (the plan
    loop calls it too). Opus at `xhigh` everywhere via explicit flags, except the always-Sonnet
    agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions,
-   and the code-writer while the operator has its Fable run on (Fable 5.2 at `high`; its `MODELS`
-   entry says which runs).
+   and the code-writer and code-reviewer while the operator has their Fable run on (Fable 5.2 at
+   `high`; their `MODELS` entries say which runs).
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question, exit 7 =
    halted at Pilot's halt file. An exit 4 leaves a document the stage registers with Pilot
    (`plugins/dev/docs/pilot.md`). `state.json`, `bailout.json` and the exit code are the entire
@@ -228,7 +228,9 @@ instead of reopening it.
   word: a reset gives back up to half the week's quota by clearing the Fable usage alone, so
   after one the normal quota has to be run out before Fable is used again. Off until they ask; the
   toggle is the code-writer's `MODELS` entry in `run_loop.py`, its test's assertion, the
-  changelog and a release. The larger build — a switch, Pilot's gold-bar line, the planning roles
+  changelog and a release. **2026-11-18 (0.10.89):** the code-reviewer joined it, `MODELS` entry
+  and assertion beside the writer's, for the operator's last Fable run — the writer alone did not
+  use up the Fable budget. The larger build — a switch, Pilot's gold-bar line, the planning roles
   on Fable — was dropped for its price
   (`PilotAppSpecs/design/proposals/fable-work-and-the-limit-resets.md`).
 - **No context compression, auto-compact windows, turn or token caps, or history summarisation**

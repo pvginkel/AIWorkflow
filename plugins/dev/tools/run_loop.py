@@ -217,16 +217,17 @@ from redact_secrets import RedactionError, is_examined, redact  # noqa: E402
 # session, which is the intended mechanism. The always-Sonnet agents
 # (test-agent, test-fixer, rebase-agent) additionally pin `model:` in their
 # own definitions, so they stay Sonnet even when dispatched as sub-agents.
-# The code-writer's entry is the operator's toggle for its Fable run (ruled
-# 2026-11-11, toggled at their word since 2026-11-13): on is
+# The code-writer's and the code-reviewer's entries are the operator's toggle
+# for their Fable run (ruled 2026-11-11 for the writer, toggled at their word
+# since 2026-11-13; the reviewer with it since 2026-11-18): on is
 # ("claude-fable-5-2", "high"), by the full id because the `fable` alias is
-# 5.1 on Claude Code 2.1.319; off is ("opus", "xhigh"). This entry is the one
-# place that says which runs.
+# 5.1 on Claude Code 2.1.319; off is ("opus", "xhigh"). These entries are the
+# one place that says which runs.
 # ---------------------------------------------------------------------------
 
 MODELS: dict[str, tuple[str, str | None]] = {
-    "code-writer": ("opus", "xhigh"),
-    "code-reviewer": ("opus", "xhigh"),
+    "code-writer": ("claude-fable-5-2", "high"),
+    "code-reviewer": ("claude-fable-5-2", "high"),
     "doc-writer": ("opus", "xhigh"),
     "wrap-up": ("opus", "xhigh"),
     "consult": ("opus", "xhigh"),
