@@ -121,7 +121,12 @@ both stages since the folder keeps its name and `slice.md` from the planning to 
 one notice at its run's end. The two go only where the tool's input schema lists both, as a step's
 why goes only where `set_progress` lists one; a Pilot that lists neither, or a folder that names no
 subject, with no number opening its name or no title in its `slice.md`, gets the debrief without
-them. It is best-effort. What came of it is one `[debrief]` line in the slice's
+them. The loop's figures go by the same rule as its `figures`: the text `input` printed after
+"The loop's figures:", which `input` keeps in the file, cut to 8,000 characters, sent only where the
+schema lists `figures`, for the pass Pilot runs after the work item's turn (PilotAppSpecs
+`design/features.md` F92.15); a Pilot that does not list it, or a file that holds none, gets the
+debrief without them. No field of the call carries a stage's time: Pilot takes it from its own
+work items. It is best-effort. What came of it is one `[debrief]` line in the slice's
 log, `log.txt` or `plan_log.txt`: the entries Pilot stored, or why none were handed — no
 credentials, no answer, a Pilot that lists no `register_debrief`, a refusal, a second call's
 among them. The debrief stays in the folder either way, committed with it, and the stage's

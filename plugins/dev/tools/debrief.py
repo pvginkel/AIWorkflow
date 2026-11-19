@@ -42,12 +42,15 @@ loop's first pass, across the work items between.
 
 When the loop completes, the stage session is handed every entry in order
 and the loop's figures under STAGE_PROMPT (`input`), and gives its own
-debrief, which the file keeps as `debrief` beside `entries` (`give`). Then
-the whole goes to Pilot, held to its limits (`for_pilot`), once, where that
-Pilot takes it (pilot_progress.hand_off_debrief); the slice's log says what
-came of it. It goes with the slice as its subject (`subject_of`), the same
-at both stages, the planning's not completing it and the run's completing
-it (COMPLETES), so that Pilot carries one slice's debriefs in one notice.
+debrief, which the file keeps as `debrief` beside `entries` (`give`).
+`input` keeps the figures it prints in the file too, as `figures`, so the
+file holds what the session read. Then the whole goes to Pilot, held to its
+limits (`for_pilot`), once, where that Pilot takes it
+(pilot_progress.hand_off_debrief), the figures with it where that Pilot's
+register_debrief takes them; the slice's log says what came of it. It goes
+with the slice as its subject (`subject_of`), the same at both stages, the
+planning's not completing it and the run's completing it (COMPLETES), so
+that Pilot carries one slice's debriefs in one notice.
 Run on its own, over a slice folder:
 
     debrief.py input <slice-dir> --stage run|plan
@@ -134,6 +137,7 @@ SECTION_MAX = 120
 ROLE_MAX = 64
 WORDS_MAX = 4_000
 SUBJECT_MAX = 120
+FIGURES_MAX = 8_000
 
 
 def role_name(role: str, phase: str | None = None) -> str:
@@ -308,18 +312,32 @@ def give(path: Path, words: str) -> None:
     _save(path, data)
 
 
+def keep_figures(path: Path, text: str) -> None:
+    """The loop's figures as the stage session read them (`figures_text`),
+    kept as the file's `figures`, whatever an earlier `input` kept there
+    replaced."""
+    path = Path(path)
+    data = _load(path)
+    data["figures"] = text
+    _save(path, data)
+
+
 def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
-def for_pilot(data: dict) -> tuple[str | None, list[dict]]:
-    """The file's `debrief` and entries as Pilot's register_debrief takes
-    them: each text past its limit cut with an ellipsis, a why as a step's
-    is, `step` left out, and past ENTRIES_MAX the entries in order up to it
-    — the file keeps them all. The debrief is None where the file has none."""
+def for_pilot(data: dict) -> tuple[str | None, list[dict], str | None]:
+    """The file's `debrief`, entries and `figures` as Pilot's
+    register_debrief takes them: each text past its limit cut with an
+    ellipsis, a why as a step's is, `step` left out, and past ENTRIES_MAX the
+    entries in order up to it — the file keeps them all. The debrief and the
+    figures are each None where the file has none, or a blank one."""
     words = data.get("debrief")
     words = _clip(words.strip(), DEBRIEF_MAX) \
         if isinstance(words, str) and words.strip() else None
+    figures = data.get("figures")
+    figures = _clip(figures.strip(), FIGURES_MAX) \
+        if isinstance(figures, str) and figures.strip() else None
     entries = []
     for e in (data.get("entries") or [])[:ENTRIES_MAX]:
         entry = {"section": _clip(e["section"], SECTION_MAX),
@@ -334,7 +352,7 @@ def for_pilot(data: dict) -> tuple[str | None, list[dict]]:
         if why is not None:
             entry["why"] = why
         entries.append(entry)
-    return words, entries
+    return words, entries, figures
 
 
 def slice_title(slice_dir: Path) -> str | None:
@@ -377,15 +395,16 @@ def hand_off(path: Path, log_line, subject: str | None = None,
              completes: bool = True) -> pilot_progress.Answer | None:
     """The file handed to Pilot whole, as `for_pilot` holds it, where the
     Pilot of this process's environment takes it, with `subject` and
-    `completes` where it takes them; what came of it is one line through
-    `log_line`. ValueError where the file holds no debrief of the stage
-    session's."""
-    words, entries = for_pilot(_load(Path(path)))
+    `completes` and with the figures `input` kept where it takes them; what
+    came of it is one line through `log_line`. ValueError where the file
+    holds no debrief of the stage session's."""
+    words, entries, figures = for_pilot(_load(Path(path)))
     if words is None:
         raise ValueError(f"no debrief of the stage session's in {path}")
     return pilot_progress.hand_off_debrief(words, entries, log_line,
                                            subject=subject,
-                                           completes=completes)
+                                           completes=completes,
+                                           figures=figures)
 
 
 # -- what the stage session reads ----------------------------------------------
@@ -541,22 +560,36 @@ def _entry_lines(i: int, entry: dict) -> list[str]:
     return lines
 
 
-def render_input(slice_dir: Path, stage: str) -> str:
-    """What the stage session reads at the loop's end: STAGE_PROMPT, then
-    every entry of the stage's debrief file in order, then the loop's
-    figures."""
+def figures_text(slice_dir: Path, stage: str) -> str:
+    """The loop's figures as the stage session reads them, a line each
+    under a dash: the run's off its state.json (`run_figures`), the plan's
+    off its plan_state.json, its debrief file and its cost (`plan_figures`).
+    The one text both printed (`render_input`) and kept (`keep_figures`)."""
     slice_dir = Path(slice_dir)
     state_name, file_name, _ = STAGES[stage]
     state = json.loads((slice_dir / state_name).read_text())
-    entries = read(slice_dir / file_name)
     figures = (run_figures(state) if stage == "run"
-               else plan_figures(state, entries, plan_cost(slice_dir)))
+               else plan_figures(state, read(slice_dir / file_name),
+                                 plan_cost(slice_dir)))
+    return "\n".join(f"- {f}" for f in figures)
+
+
+def render_input(slice_dir: Path, stage: str,
+                 figures: str | None = None) -> str:
+    """What the stage session reads at the loop's end: STAGE_PROMPT, then
+    every entry of the stage's debrief file in order, then the loop's
+    figures — `figures`, or where none are given, `figures_text`'s."""
+    slice_dir = Path(slice_dir)
+    _, file_name, _ = STAGES[stage]
+    entries = read(slice_dir / file_name)
+    if figures is None:
+        figures = figures_text(slice_dir, stage)
     lines = [STAGE_PROMPT, "", "The debriefs, in order:", ""]
     for i, entry in enumerate(entries, 1):
         lines += _entry_lines(i, entry)
     if not entries:
         lines.append("None.")
-    lines += ["", "The loop's figures:", *(f"- {f}" for f in figures)]
+    lines += ["", "The loop's figures:", *([figures] if figures else [])]
     return "\n".join(lines) + "\n"
 
 
@@ -599,12 +632,14 @@ def _hand_off(slice_dir: str, stage: str) -> int:
 
 
 def cmd_input(args) -> int:
-    state_path, _, _ = _paths(args.slice_dir, args.stage)
+    state_path, path, _ = _paths(args.slice_dir, args.stage)
     if not state_path.is_file():
         print(f"Error: no {state_path.name} in {args.slice_dir}",
               file=sys.stderr)
         return 2
-    sys.stdout.write(render_input(Path(args.slice_dir), args.stage))
+    figures = figures_text(Path(args.slice_dir), args.stage)
+    keep_figures(path, figures)
+    sys.stdout.write(render_input(Path(args.slice_dir), args.stage, figures))
     return 0
 
 
@@ -647,7 +682,8 @@ def main(argv=None) -> int:
 
     stage_parser("input", "print what the stage session reads at the loop's "
                           "end: the ask, every debrief in order, the loop's "
-                          "figures").set_defaults(func=cmd_input)
+                          "figures, which the file keeps"
+                 ).set_defaults(func=cmd_input)
     stage_parser("give", "keep the stage session's debrief, given on stdin, "
                          "in the file, and hand the whole to Pilot"
                  ).set_defaults(func=cmd_give)

@@ -4,6 +4,23 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-19 — The debrief hands Pilot the loop's figures (v0.10.90)
+
+AIWF-230, the plugin's half of P-410 (PilotAppSpecs F92.15, `database.md` decision 85): Pilot's
+pass after a stage's turn reads the loop's figures with the debrief, so that its account of the
+slice does not rest on the stage session's words alone.
+
+- **`debrief.py input` keeps the figures it prints in the debrief file as `figures`**, the text
+  after "The loop's figures:", one function giving both the printed and the kept text. The `give`
+  or `hand-off` that follows sends that text, cut to 8,000 characters, as `register_debrief`'s
+  `figures`; a file without it sends none. No field carries a stage's time: Pilot takes it from
+  its own work items.
+- **The field goes only to a Pilot that lists it**: `pilot_progress.discover` reads whether
+  `register_debrief`'s input schema has `figures` (`Takes.figures`), apart from `subject` and
+  `completes`, and `hand_off_debrief` sends it only there. Today's production Pilot does not list
+  it and gets the call as before; Pilot's half, the slice "Notable events over a project
+  journal", turns it on. The stage session's own debrief and its prompt are unchanged.
+
 ## 2026-11-18 — The code-writer and the code-reviewer run Fable 5.2 at `high` (v0.10.89)
 
 The operator's last Fable run: the code-writer alone did not use up the Fable budget last time, so

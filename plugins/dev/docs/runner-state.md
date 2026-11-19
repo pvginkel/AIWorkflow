@@ -358,8 +358,9 @@ writes the file; the plan loop keeps `plan_debrief.json` by the same rules
 | `step` | the code of the step in `progress` the dispatch ran under, the active one, which `section` and `round` are read off; the plugin's own |
 
 Beside `entries`, the file holds `debrief`, the stage session's own account of the run, given at
-the close-out and handed to Pilot with the entries, each less its `step`
-([pilot.md](pilot.md) § The debrief). `/dev:run-slice` commits the file with the folder at the
+the close-out and handed to Pilot with the entries, each less its `step`, and `figures`, the
+loop's figures as `debrief.py input` printed them to that session, kept by `input` and handed with
+them where Pilot takes them ([pilot.md](pilot.md) § The debrief). `/dev:run-slice` commits the file with the folder at the
 close-out.
 
 ## bailout.json and exit codes

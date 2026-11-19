@@ -44,7 +44,8 @@ end: one `tools/call` of DEBRIEF_TOOL, made only where that Pilot's own
 `tools/list` names it (`hand_off_debrief`), and what came of it goes to the
 slice's log in one line. The debrief's `subject` and `completes` go with it
 only where that same list gives DEBRIEF_TOOL both fields, as a step's why
-goes only where `set_progress` gives a step one.
+goes only where `set_progress` gives a step one; the loop's figures go
+likewise only where it gives DEBRIEF_TOOL a `figures` field.
 
 Run on its own, over a slice folder's state file, with the session's
 `PILOT_TOKEN` and `PILOT_MCP_URL`:
@@ -348,11 +349,13 @@ NO_ANSWER = "no_answer"
 class Takes(NamedTuple):
     """What a Pilot takes beyond a step's code, label and state, as its own
     `tools/list` shows it: a step's `why` where `set_progress`'s steps have
-    that field, the debrief where it lists DEBRIEF_TOOL, and the debrief's
-    `subject` and `completes` where DEBRIEF_TOOL has both fields."""
+    that field, the debrief where it lists DEBRIEF_TOOL, the debrief's
+    `subject` and `completes` where DEBRIEF_TOOL has both fields, and its
+    `figures` where DEBRIEF_TOOL has that field."""
     why: bool = False
     debrief: bool = False
     subject: bool = False
+    figures: bool = False
 
 
 NOTHING = Takes()
@@ -420,14 +423,18 @@ def send(steps: list[dict], url: str, token: str,
 def send_debrief(words: str, entries: list[dict], url: str, token: str,
                  opener: Callable | None = None,
                  timeout: float = DEBRIEF_TIMEOUT,
-                 subject: str | None = None, completes: bool = True) -> Answer:
+                 subject: str | None = None, completes: bool = True,
+                 figures: str | None = None) -> Answer:
     """One `tools/call` of DEBRIEF_TOOL with the stage session's `words` and
-    the run's `entries`, as given, and with a `subject`, it and `completes`:
-    `ok` with the number Pilot stored, else `refused` or `no_answer` with
-    the reason. Never raises; no reason holds the token."""
+    the run's `entries`, as given, with a `subject`, it and `completes`, and
+    with `figures`, them: `ok` with the number Pilot stored, else `refused`
+    or `no_answer` with the reason. Never raises; no reason holds the
+    token."""
     arguments = {"debrief": words, "entries": entries}
     if subject is not None:
         arguments.update(subject=subject, completes=completes)
+    if figures is not None:
+        arguments["figures"] = figures
     try:
         message = _post("tools/call", {
             "name": DEBRIEF_TOOL, "arguments": arguments},
@@ -464,7 +471,8 @@ def discover(url: str, token: str, opener: Callable | None = None,
     named = {t.get("name"): t for t in tools if isinstance(t, dict)}
     return Answer(OK, takes=Takes(
         why=_steps_take_why(named.get(TOOL)), debrief=DEBRIEF_TOOL in named,
-        subject=_debrief_takes_subject(named.get(DEBRIEF_TOOL))))
+        subject=_debrief_takes_subject(named.get(DEBRIEF_TOOL)),
+        figures=_debrief_takes_figures(named.get(DEBRIEF_TOOL))))
 
 
 def _steps_take_why(tool) -> bool:
@@ -490,6 +498,16 @@ def _debrief_takes_subject(tool) -> bool:
     try:
         fields = tool["inputSchema"]["properties"]
         return "subject" in fields and "completes" in fields
+    except (KeyError, TypeError):
+        return False
+
+
+def _debrief_takes_figures(tool) -> bool:
+    """Whether DEBRIEF_TOOL's input schema has `figures` among its
+    fields."""
+    try:
+        fields = tool["inputSchema"]["properties"]
+        return isinstance(fields, dict) and "figures" in fields
     except (KeyError, TypeError):
         return False
 
@@ -691,7 +709,8 @@ def hand_off_debrief(words: str, entries: list[dict],
                      log_line: Callable[[str], None], environ=None,
                      opener: Callable | None = None,
                      subject: str | None = None,
-                     completes: bool = True) -> Answer | None:
+                     completes: bool = True,
+                     figures: str | None = None) -> Answer | None:
     """The work item's debrief handed to Pilot, once: `words`, the stage
     session's own, and `entries`, held to Pilot's limits by the caller
     (debrief.for_pilot), sent with the credentials from this process's
@@ -699,7 +718,9 @@ def hand_off_debrief(words: str, entries: list[dict],
     DEBRIEF_TOOL — one that does not would refuse the call as a tool it does
     not know. A `subject`, what the debrief is an account of, goes with
     `completes` only where that list gives DEBRIEF_TOOL both fields; to any
-    other Pilot the debrief goes without them. What came of it, stored or
+    other Pilot the debrief goes without them. The loop's `figures`, held to
+    Pilot's limit by the caller, go likewise only where that list gives
+    DEBRIEF_TOOL a `figures` field. What came of it, stored or
     why not, is one line through `log_line`. The answer of the last call
     made, or None with no credentials; never raises."""
     sender = _Sender(log_line, environ, opener)
@@ -724,7 +745,8 @@ def hand_off_debrief(words: str, entries: list[dict],
         answer = send_debrief(
             words, entries, sender.url, sender.token, sender.opener,
             subject=subject if listed.takes.subject else None,
-            completes=completes)
+            completes=completes,
+            figures=figures if listed.takes.figures else None)
         if answer.kind == NO_ANSWER:
             sender._note(NO_ANSWER, f"no answer from {sender.url}: "
                                     f"{answer.reason}", NOT_HANDED)

@@ -346,7 +346,8 @@ def test_the_file_goes_to_pilot_held_to_its_limits_and_without_its_steps():
          "duration": 30, "step": "sweep-2"},
         *({"section": "Wrap-up", "round": 1, "role": "Wrap-up",
            "duration": i, "step": "wrap-up"} for i in range(600))]}
-    words, entries = debrief.for_pilot(data)
+    words, entries, figures = debrief.for_pilot(data)
+    assert figures is None
     assert len(words) == 16_000 and words.endswith("…") and words[0] == "y"
     assert len(entries) == 500 and entries[-1]["duration"] == 496
     first = entries[0]
@@ -360,8 +361,45 @@ def test_the_file_goes_to_pilot_held_to_its_limits_and_without_its_steps():
     assert "passed" not in entries[2] and "words" not in entries[2]
     assert all(type(e["round"]) is int and type(e["duration"]) is int
                for e in entries)
-    assert debrief.for_pilot({"entries": []}) == (None, [])
+    assert debrief.for_pilot({"entries": []}) == (None, [], None)
     assert debrief.for_pilot({"debrief": " \n"})[0] is None
+
+
+def test_the_figures_go_to_pilot_cut_to_its_limit_and_none_where_blank():
+    figures = "- " + "f" * 9000
+    _, _, held = debrief.for_pilot({"figures": "\n" + figures + "\n  "})
+    assert len(held) == debrief.FIGURES_MAX == 8_000
+    assert held.endswith("…") and held.startswith("- fff")
+    assert debrief.for_pilot({"figures": " - Phases: 2\n"})[2] == \
+        "- Phases: 2"
+    for data in ({}, {"figures": ""}, {"figures": " \n\t"},
+                 {"figures": None}, {"figures": ["- Phases: 2"]},
+                 {"figures": 42}):
+        assert debrief.for_pilot(data)[2] is None, data
+
+
+def test_the_figures_text_is_what_the_input_prints_under_its_heading():
+    plan_state = {"writer_rounds": 1, "review_rounds": 1, "history": []}
+    saved = debrief.plan_cost
+    debrief.plan_cost = lambda slice_dir: (12.5, [])
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "state.json").write_text(json.dumps(RUN_STATE))
+            (Path(tmp) / "plan_state.json").write_text(json.dumps(plan_state))
+            entries_file(tmp)
+            for stage, lines in (
+                    ("run", debrief.run_figures(RUN_STATE)),
+                    ("plan", debrief.plan_figures(plan_state, [],
+                                                  (12.5, [])))):
+                text = debrief.figures_text(Path(tmp), stage)
+                assert text == "\n".join(f"- {f}" for f in lines), stage
+                printed = debrief.render_input(Path(tmp), stage)
+                assert printed.partition("\nThe loop's figures:\n")[2] == \
+                    text + "\n", stage
+                assert debrief.render_input(Path(tmp), stage, text) == \
+                    printed, stage
+    finally:
+        debrief.plan_cost = saved
 
 
 class _Response:
@@ -413,6 +451,25 @@ def run_cli(argv, stdin="", opener=None, env=None):
         return code, sys.stdout.getvalue(), sys.stderr.getvalue()
     finally:
         sys.stdin, sys.stdout, sys.stderr, pp.os.environ, pp.OPENER = saved
+
+
+def test_input_keeps_the_figures_it_prints_in_the_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "state.json").write_text(json.dumps(RUN_STATE))
+        # no debrief file yet: input makes one holding the figures alone
+        code, out, _ = run_cli(["input", tmp, "--stage", "run"])
+        want = debrief.figures_text(Path(tmp), "run")
+        assert code == 0
+        assert out == debrief.render_input(Path(tmp), "run")
+        assert out.endswith("The loop's figures:\n" + want + "\n")
+        path = Path(tmp) / debrief.RUN_FILE
+        assert json.loads(path.read_text()) == {"figures": want}
+        # a file with entries and a debrief keeps both; a re-run replaces
+        path = entries_file(tmp, debrief="Given.", figures="- stale")
+        kept = json.loads(path.read_text())
+        code, out, _ = run_cli(["input", tmp, "--stage", "run"])
+        assert code == 0 and out.endswith(want + "\n")
+        assert json.loads(path.read_text()) == {**kept, "figures": want}
 
 
 def test_give_keeps_the_stage_sessions_words_and_hands_the_whole_to_pilot():
@@ -566,6 +623,45 @@ def test_each_stage_gives_the_slice_as_its_subject_the_run_completing_it():
             0, "Debrief handed to Pilot: 4 entries stored\n", "")
         assert set(opener.bodies[1]["params"]["arguments"]) == {
             "debrief", "entries"}
+
+
+FIGURES_LISTED = {"jsonrpc": "2.0", "id": 1, "result": {"tools": [
+    {"name": "set_progress", "inputSchema": {}},
+    {"name": "register_debrief", "inputSchema": {"properties": {
+        "debrief": {}, "entries": {}, "subject": {}, "completes": {},
+        "figures": {}}}}]}}
+
+
+def test_the_kept_figures_go_to_a_pilot_that_lists_them_and_no_other():
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "058_the_search_page"
+        folder.mkdir()
+        (folder / "slice.md").write_text(SLICE_MD)
+        (folder / "state.json").write_text(json.dumps(RUN_STATE))
+        entries_file(folder)
+        assert run_cli(["input", str(folder), "--stage", "run"])[0] == 0
+        kept = json.loads((folder / debrief.RUN_FILE).read_text())["figures"]
+        opener = JsonOpener(FIGURES_LISTED, STORED)
+        assert run_cli(["give", str(folder), "--stage", "run"], "It went.",
+                       opener)[:2] == (
+            0, "Debrief handed to Pilot: 4 entries stored\n")
+        arguments = opener.bodies[1]["params"]["arguments"]
+        assert arguments["figures"] == kept
+        assert set(arguments) == {"debrief", "entries", "subject",
+                                  "completes", "figures"}
+        # today's Pilot, subject and completes but no figures: as before
+        for listed in (SUBJECT_LISTED, LISTED):
+            opener = JsonOpener(listed, STORED)
+            assert run_cli(["hand-off", str(folder), "--stage", "run"],
+                           opener=opener)[0] == 0
+            assert "figures" not in opener.bodies[1]["params"]["arguments"]
+        # a file with no figures kept sends none, to a Pilot that lists them
+        entries_file(folder, debrief="Given.")
+        opener = JsonOpener(FIGURES_LISTED, STORED)
+        assert run_cli(["hand-off", str(folder), "--stage", "run"],
+                       opener=opener)[0] == 0
+        assert set(opener.bodies[1]["params"]["arguments"]) == {
+            "debrief", "entries", "subject", "completes"}
 
 
 def test_the_commands_refuse_what_they_cannot_do():
