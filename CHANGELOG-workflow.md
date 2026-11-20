@@ -4,6 +4,52 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-20 — The published steps: kind, conversations, duration and mark, and the seed (v0.10.91)
+
+The workflow's half of the time a running work item still takes (PilotApp slice 049, in
+production since 2026-11-20, P-314): every step the loops publish to Pilot carries what its
+estimate is built from, and a seed sends a repository's past runs. AIWF-184, AIWF-188, AIWF-196,
+AIWF-198, AIWF-199, AIWF-200 and AIWF-203; the operator's rulings of 2026-11-20 are PilotAppSpecs
+`tools/cost-dashboard/asks/t24-published-steps.md` (D263 in its decision index for D2).
+
+- **Each step carries its kind** (AIWF-184), one map in `pilot_progress.py` for the live
+  publications and the seed: the run's `code-writer`, `review`, `sweep`, `consult`, `test`,
+  `docs`, `wrap-up`, `fixes`, `close-out`, the plan's `plan-grounding`, `plan-writer`,
+  `plan-review` (the record's `database.md` Step Kind, and D1). The codes are unchanged.
+- **Each step carries its conversations from the round's start** (AIWF-184, AIWF-188): every
+  session a loop spawns goes on the active step as it is noted, the plan loop's held in a new
+  `in_flight` record in `plan_state.json`; the first 100 kept, an id past 64 characters left out
+  (D5).
+- **A done step carries its whole duration** (AIWF-198): a step clock banks what it ran, is
+  paused through the usage-halt sleep, banked at every exit and, after a kill, up to the stopped
+  driver's last log line, so a reattached round counts whole. A step finished unrun carries none.
+  History rows' `duration_s` are unchanged.
+- **The sweep and the consult are listed from the run's start** (AIWF-199), and finished unrun
+  where the run passes them over.
+- **A code round is marked once its gate runs pass a threshold** (AIWF-203): the driver's phase
+  gate, re-gate and merge-base runs inside the round, the running one counted as it goes; 40
+  minutes by default (D3), a repo's `[progress] gate_mark_minutes` in `.aiworkflowrc` over it;
+  the mark stays set into the done publication, which Pilot's timing records.
+- **A step is listed before it starts** (AIWF-200 and its comment from slice 049's close-out): a
+  fresh run's or plan loop's launcher publishes the list with every step `pending` before it
+  hands back, a resume's the list as it stood; the plan stage's grounding goes `--ground pending`,
+  then `active`, then `done` with its duration (`grounding.json` in the run records holding its
+  start). A continuation's running step stays unknown to Pilot, as meant.
+- **The close-out's continuation publishes its own steps** (AIWF-200, D2): `run_loop.py progress
+  <slice> --close-out pending|active|done` gives the step `close-out`, and the fixes pass's
+  launcher adds `fixes` pending, both in `state.json`'s new `close_out_progress`, never the run's
+  list, `fixes` leaving `progress`, which stays the run's own record; `close-out`'s clock stands
+  still while the fixes pass runs, and a pass that never runs finishes `fixes` unrun. The run-slice skill's "The
+  close-out answered" runs them and commits `state.json` after `done`.
+- **`seed_timings.py [<repo-root>] [--dry-run] [--json]`** (AIWF-196) sends a repository's past
+  runs' timings through Pilot's `seed_step_timings`, one per round of each finished step, from
+  its spec repo's completed slices, a slice published live passed over; the duration is the sum
+  of the round's recorded parts (D4); listed ahead where a run of today would list it. Built and
+  released here, not run: a work item per repository runs it (P-323). Its dry run on PilotApp
+  reads 48 slices into 1,504 timings.
+- **The new fields go to every Pilot**, with no `tools/list` check: both of Pilot's stages take
+  them. Every limit Pilot refuses a whole list over is held on this side (`sanitize`).
+
 ## 2026-11-19 — The debrief hands Pilot the loop's figures (v0.10.90)
 
 AIWF-230, the plugin's half of P-410 (PilotAppSpecs F92.15, `database.md` decision 85): Pilot's
