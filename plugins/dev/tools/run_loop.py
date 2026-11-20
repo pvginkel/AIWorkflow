@@ -86,8 +86,9 @@ new session — because a caller's background task is killed at its own cap
 and a slice outlives it. The parent returns once the driver holds run.lock
 and is past its refusals (a refusal comes back as the parent's own exit 2,
 with the message), printing the driver's pid and the `wait` command that
-follows it — a fresh run's launcher, not a resume's, first sending Pilot the
-seeded list with every step pending (`publish_pending_first`); from then on
+follows it — a fresh run's launcher first sending Pilot the seeded list with
+every step pending (`publish_pending_first`), a resume's the list as it stood
+before the driver went on (`publish_as_it_stood`); from then on
 the driver's stdout is gone and its stderr goes to log.txt. Its exit code
 goes to disk instead: every run that got that far records `exit: {code,
 ts}` in state.json as its last write, and a --resume clears it — so a run
@@ -95,11 +96,12 @@ with no `exit` and no live driver was killed from outside. `wait` blocks
 on the run.lock flock (liveness is the lock, never the pid) for at most
 --for seconds and prints a signal — running, ended with its exit, or gone —
 and meanwhile publishes the steps the driver keeps in state.json's
-`progress` to Pilot (pilot_progress.py), which the driver never calls
-itself: each with its kind, the sessions of the rounds that did its work
-from each round's start, a done one's whole duration — a usage halt's sleep
-and the time the run stood stopped left out — and a code round's mark once
-its own gate runs pass the repo's `[progress] gate_mark_minutes`; `stop`
+`progress` — the fixes pass's, the close-out continuation's list — to Pilot
+(pilot_progress.py), which the driver never calls itself: each with its
+kind, the sessions of the rounds that did its work from each round's start,
+a done one's whole duration — a usage halt's sleep and the time the run
+stood stopped left out — and a code round's mark once its own gate runs
+pass the repo's `[progress] gate_mark_minutes`; `stop`
 SIGINTs the driver — its KeyboardInterrupt path, the same as Ctrl-C on an
 attached run. run.lock's note names the driver's KubeCoder environment, host
 and pid, with a heartbeat rewritten every minute while it holds the lock;
@@ -124,10 +126,19 @@ run.lock and records its exit as `run` does, so `wait`, `status` and `stop`
 work on it; its record is state.json's `fixes`. It exits 0 whatever became of
 the fixes, 130 interrupted, 7 halted, 2 or 3 refused at the start.
 
+The close-out's continuation is a work item of its own, and its steps are the
+close-out's alone, never the run's (D2): `close-out`, which the continuation's
+session publishes itself (`progress --close-out pending|active|done`), and
+`fixes` where a fixes pass runs, which its launcher lists pending and its
+`wait` carries on; the close-out's clock stands paused while `fixes` runs.
+They are state.json's `close_out_progress` (CLOSE_OUT_STEPS), beside the
+run's `progress`, which stays the run's record as the run left it.
+
 Usage:
     run_loop.py run <slice-dir> [--resume] [--detach] [--step ID] [--spec-push]
                     [--verbose] [--dry-run]
     run_loop.py fixes <slice-dir> [--detach] [--spec-push] [--verbose]
+    run_loop.py progress <slice-dir> --close-out pending|active|done
     run_loop.py wait <slice-dir> [--for SECONDS]
     run_loop.py stop <slice-dir>
     run_loop.py status <slice-dir>
@@ -143,7 +154,9 @@ gone) or at the start (nothing ran) · 2 usage/precondition error ·
 Exit codes of wait, its own and not the run's: 0 the run ended (its code is
 in the output) · 5 still running at --for · 6 the driver is gone and left no
 exit record · 2 no run to wait on. Of stop: 0 stopped · 1 no driver running,
-or still running after the wait · 2 the driver is on another host.
+or still running after the wait · 2 the driver is on another host. Of
+progress: 0, whatever Pilot answered · 2 no slice dir or state.json, or a
+driver holding run.lock.
 """
 
 import argparse
@@ -4594,7 +4607,15 @@ Write your verdict to {verdict_path}: `fixed`, the entries you committed a
 fix for, and `cards`, those you took back.
 """
 
-# The fixes pass's step on Pilot's tile, beside the run's (`progress`).
+# The close-out continuation's steps on its own work item's tile (D2):
+# state.json's CLOSE_OUT_STEPS, never the run's `progress` — the close-out's
+# own step, which the continuation's session publishes (`progress
+# --close-out`), and the fixes pass's, whose clock runs while the close-out's
+# stands paused for FIXES_PAUSE.
+CLOSE_OUT_STEPS = "close_out_progress"
+CLOSE_OUT_STEP = pilot_progress.step_code("close-out")
+CLOSE_OUT_LABEL = "Close-out"
+FIXES_PAUSE = "fixes"
 FIXES_STEP = pilot_progress.step_code("fixes")
 # Why a step's clock stands paused through the session-limit sleep
 # (`_wait_out_session_limit`), which a resume lifts as well.
@@ -5663,6 +5684,11 @@ class RunLoop:
         # Set once state.json is this run's: from then on every exit goes on
         # record in it (`_record_exit`).
         self._owns_state = False
+        # The list of state.json the driver's steps are kept in: the run's
+        # `progress`, or in the fixes pass the close-out continuation's
+        # (CLOSE_OUT_STEPS) — what `_progress`, a session's conversation and
+        # a debrief entry's step read.
+        self._steps_key = "progress"
         # name → effective cwd, from `kc project list --output=json`; loaded
         # in run() (both fresh and resume need it before any dispatch).
         self.project_dirs: dict[str, Path] = {}
@@ -5840,11 +5866,18 @@ class RunLoop:
         # The time the run then stands stopped — a hand-back's wait on the
         # operator above all — is no time of the step it stopped in: its
         # open stretch is banked here, and a resume's clock runs on from it.
+        # A fixes pass banks its own step alone: the close-out's clock is
+        # the session's, and runs again from the pass's end.
+        fixes = (extra or {}).get("pass") == "fixes"
         for held in (state, self.state):
             with contextlib.suppress(Exception):
                 if isinstance(held.get("progress"), list):
                     held["progress"] = pilot_progress.bank(held["progress"],
                                                            at)
+            with contextlib.suppress(Exception):
+                if fixes and isinstance(held.get(CLOSE_OUT_STEPS), list):
+                    held[CLOSE_OUT_STEPS] = fixes_ended(
+                        held[CLOSE_OUT_STEPS], at)
         state["exit"] = self.state["exit"] = {"code": code, "ts": at,
                                               **(extra or {})}
         try:
@@ -5920,9 +5953,10 @@ class RunLoop:
                  duration_s: int, verdict=None,
                  passed: bool | None = None) -> None:
         """The dispatch's entry in the run's debrief file (debrief.py), under
-        the step in `progress` it ran under."""
-        debrief.record(self.debrief_path, self.state.get("progress"), role,
-                       round_, duration_s, phase, verdict=verdict,
+        the step it ran under: in `progress`, or the fixes pass's in the
+        close-out continuation's list."""
+        debrief.record(self.debrief_path, self.state.get(self._steps_key),
+                       role, round_, duration_s, phase, verdict=verdict,
                        passed=passed)
 
     def _emit(self, line: str) -> None:
@@ -6997,14 +7031,15 @@ class RunLoop:
 
     def _progress(self, edit) -> None:
         """`edit` applied to state.json's `progress` — the steps `wait`
-        publishes to Pilot — and saved when it changed it. A state with no
-        list is left as it is: only the seed makes one."""
-        steps = self.state.get("progress")
+        publishes to Pilot — or, in the fixes pass, to the close-out
+        continuation's (`_steps_key`), and saved when it changed it. A state
+        with no list is left as it is: only the seed makes one."""
+        steps = self.state.get(self._steps_key)
         if not isinstance(steps, list):
             return
         edited = edit(steps)
         if edited != steps:
-            self.state["progress"] = edited
+            self.state[self._steps_key] = edited
             self._save_state()
 
     def _progress_start(self, kind: str, round_: int, label: str,
@@ -7027,7 +7062,7 @@ class RunLoop:
         none and keeps the why it has."""
         code = pilot_progress.step_code(kind, round_, phase_id)
         started = _now_iso()
-        steps = self.state.get("progress")
+        steps = self.state.get(self._steps_key)
         steps = steps if isinstance(steps, list) else []
         if pilot_progress.taken(steps, code) or (
                 after is not None
@@ -7076,14 +7111,15 @@ class RunLoop:
         writer's, the reviewer's, the test-fixer's inside its gate's code
         step, a consult's, the test phase's, the doc phase's, the wrap-up's.
         Whether the list changed; the caller saves the state, so the next
-        `wait` publishes it."""
-        steps = self.state.get("progress")
+        `wait` publishes it. The fixes pass's session is its step's, in the
+        close-out continuation's list (`_steps_key`)."""
+        steps = self.state.get(self._steps_key)
         if not isinstance(steps, list):
             return False
         edited = pilot_progress.add_conversation(steps, None, sid)
         if edited == steps:
             return False
-        self.state["progress"] = edited
+        self.state[self._steps_key] = edited
         return True
 
     def _gate_mark_minutes(self) -> int:
@@ -7104,7 +7140,7 @@ class RunLoop:
         kept on the step once they pass the repo's `gate_mark_minutes`. A
         gate run under any other step (the merge's re-gate, in the review's)
         is no code round's and is not timed."""
-        step = pilot_progress.active_step(self.state.get("progress"))
+        step = pilot_progress.active_step(self.state.get(self._steps_key))
         code = step.get("code") if step else None
         if not isinstance(code, str) or not code \
                 or pilot_progress.split_code(code)[:2] != (phase_id, "code"):
@@ -14152,7 +14188,15 @@ class RunLoop:
                 self._slice_lock.lock_path.unlink(missing_ok=True)
 
     def _fixes(self) -> None:
-        """The pass's refusals, then the pass under the exits it can take."""
+        """The pass's refusals, then the pass under the exits it can take.
+        Its steps are the close-out continuation's (CLOSE_OUT_STEPS), its
+        work item's, never the run's `progress`: a step a state from before
+        them keeps there, a pass still in flight, moves over
+        (`take_close_out_steps`), and one a killed pass left running is
+        banked up to log.txt's last write, read before this pass writes a
+        line, the close-out's clock running again from there
+        (`fixes_ended`)."""
+        last_seen = self._log_last_written()
         if halt_requested():
             print(f"Halted: {HALT_FILE} is present — Pilot's halt holds, and "
                   "the fixes pass does not start. Run the same command again "
@@ -14185,9 +14229,15 @@ class RunLoop:
         # Cleared on disk before anything else, as a resume clears it: a
         # stale exit under a live pass would read as the pass's end.
         self._owns_state = True
+        killed = self.state.get("exit") is None
         self.state.pop("exit", None)
         self.state["driver"] = {**self._slice_lock.driver, "pass": "fixes"}
         self.state["in_flight"] = None
+        steps = take_close_out_steps(self.state)
+        if killed:
+            steps = fixes_ended(steps, last_seen)
+        self.state[CLOSE_OUT_STEPS] = steps
+        self._steps_key = CLOSE_OUT_STEPS
         self._save_state()
         if self.on_start is not None:
             self.on_start()
@@ -14286,10 +14336,20 @@ class RunLoop:
         return fx
 
     def _fixes_step_start(self) -> None:
-        """Pilot's tile shows the pass as a step of its own while it runs."""
+        """Pilot's tile shows the pass as a step of its own while it runs,
+        in the close-out continuation's list (D2): `fixes` active — the one
+        its launcher listed pending, or the step an earlier attempt left,
+        started again with the time it ran kept — and the close-out's clock
+        paused, so that its length is its own work alone."""
         started = _now_iso()
-        self._progress(lambda steps: pilot_progress.start(
-            steps, FIXES_STEP, FIXES_LABEL, started))
+
+        def begin(steps: list[dict]) -> list[dict]:
+            steps = pilot_progress.pause(steps, started, CLOSE_OUT_STEP,
+                                         reason=FIXES_PAUSE)
+            return pilot_progress.start(steps, FIXES_STEP, FIXES_LABEL,
+                                        started)
+
+        self._progress(begin)
 
     def _fixes_run(self, fx: dict, ctx: dict) -> None:
         """The pass up to its landing: the store committed, the branches cut,
@@ -14990,9 +15050,15 @@ class RunLoop:
              "carded")) if n]
         label = FIXES_LABEL + (" · " + ", ".join(f"{n} {w}" for n, w in counts)
                                if counts else "")
-        self._progress(lambda steps: [
-            dict(s, state=pilot_progress.DONE, label=label)
-            if s.get("code") == FIXES_STEP else dict(s) for s in steps])
+        at = _now_iso()
+
+        def end(steps: list[dict]) -> list[dict]:
+            steps = fixes_ended(pilot_progress.finish_step(steps, FIXES_STEP,
+                                                           at), at)
+            return [dict(s, label=label) if s.get("code") == FIXES_STEP
+                    else s for s in steps]
+
+        self._progress(end)
         for line in lines:
             self.log(f"[fixes] {line}")
         self.announce("fixes pass over: "
@@ -15629,7 +15695,13 @@ def cmd_fixes(args) -> None:
                    spec_push=bool(args.spec_push))
     print(f"run loop log: {loop.log_path}", flush=True)
     if args.detach:
-        run_detached(loop, slice_dir, method="fixes")
+        # Read before the pass is spawned: the continuation's list as it
+        # stood, `fixes` listed pending where it holds none (D2).
+        before = _read_json(loop.state_path)
+        run_detached(loop, slice_dir, method="fixes",
+                     first=lambda: publish_as_it_stood(
+                         fixes_launch_steps(before), loop.log_path,
+                         loop.repo_root))
         return
     loop.fixes()
 
@@ -15653,10 +15725,18 @@ def cmd_run(args) -> None:
     print(f"run loop log: {loop.log_path}", flush=True)
     if args.detach:
         # A fresh run's steps go to Pilot all pending before any of them is
-        # published begun (AIWF-200); a resume's list is Pilot's already.
-        first = None if args.resume else (
-            lambda: publish_pending_first(loop.state_path, loop.log_path,
-                                          loop.repo_root))
+        # published begun (AIWF-200); a resume's as they stood before the
+        # driver went on, read now, before it is spawned.
+        before = _read_json(loop.state_path) if args.resume else None
+        held = before.get("progress") if isinstance(before, dict) else None
+
+        def first() -> None:
+            if args.resume:
+                publish_as_it_stood(held, loop.log_path, loop.repo_root)
+            else:
+                publish_pending_first(loop.state_path, loop.log_path,
+                                      loop.repo_root)
+
         run_detached(loop, Path(args.slice_dir), first=first)
         return
     loop.run()
@@ -15701,6 +15781,191 @@ def publish_pending_first(state_path: Path, log_path: Path,
         gate_mark_minutes=gate_mark_minutes(root))
 
 
+def publish_as_it_stood(steps, log_path: Path,
+                        root: Path | None = None) -> None:
+    """A launch's first publication of a list read before its driver was
+    spawned — a resume's `progress`, the fixes pass's close-out list
+    (`fixes_launch_steps`) — as it stood then: done steps done, a step the
+    stop left active still active, pending ones pending, whatever the
+    driver has moved on to since, so that a step it starts after the launch
+    stood on the work item's first list (AIWF-200). Best-effort as
+    `publish_pending_first`: no list sends nothing."""
+    if not isinstance(steps, list) or not steps:
+        return
+    pilot_progress.publish_steps(
+        [dict(s) for s in steps if isinstance(s, dict)],
+        lambda text: _append_wait_line(log_path, text, tag="launch"),
+        gate_mark_minutes=gate_mark_minutes(root))
+
+
+def _active_fixes(state: dict) -> list[dict]:
+    progress = state.get("progress")
+    return [s for s in progress if isinstance(s, dict)
+            and s.get("code") == FIXES_STEP
+            and s.get("state") == pilot_progress.ACTIVE] \
+        if isinstance(progress, list) else []
+
+
+def close_out_steps(state) -> list[dict]:
+    """The close-out continuation's list as state.json holds it
+    (CLOSE_OUT_STEPS), copied — and, on a state from before that list kept
+    the fixes pass's step, the `fixes` step a pass still in flight left
+    active in the run's `progress`, so that a pass relaunched across the
+    release keeps its one step. A `fixes` step done in `progress` is an
+    earlier continuation's, and stays the run's record."""
+    if not isinstance(state, dict):
+        return []
+    held = state.get(CLOSE_OUT_STEPS)
+    steps = [dict(s) for s in held if isinstance(s, dict)] \
+        if isinstance(held, list) else []
+    if any(s.get("code") == FIXES_STEP for s in steps):
+        return steps
+    return steps + [dict(s) for s in _active_fixes(state)[:1]]
+
+
+def take_close_out_steps(state: dict) -> list[dict]:
+    """`close_out_steps`, the step it moved over from the run's `progress`
+    taken out of it."""
+    steps = close_out_steps(state)
+    held = state.get(CLOSE_OUT_STEPS)
+    if not (isinstance(held, list) and any(
+            isinstance(s, dict) and s.get("code") == FIXES_STEP
+            for s in held)) and _active_fixes(state):
+        state["progress"] = [s for s in state["progress"]
+                             if not (isinstance(s, dict)
+                                     and s.get("code") == FIXES_STEP
+                                     and s.get("state")
+                                     == pilot_progress.ACTIVE)]
+    return steps
+
+
+def fixes_ended(steps: list[dict], at) -> list[dict]:
+    """The close-out continuation's list as the fixes pass leaves it at
+    `at` — its end, its driver's exit, or a killed driver's last sign of
+    life: the `fixes` step's open stretch banked up to it, so the time the
+    pass then stands stopped is not its own, and the close-out's clock,
+    paused while the pass ran, running again from it. With no `at`, a
+    killed pass and no log to tell when it died, the open stretch is
+    dropped and the close-out stays paused until the pass's next start or
+    end."""
+    if at is None:
+        for step in [s for s in steps if s.get("code") == FIXES_STEP
+                     and s.get("state") == pilot_progress.ACTIVE
+                     and not s.get("paused") and s.get("started")]:
+            steps = pilot_progress.bank(steps, step["started"], FIXES_STEP)
+        return steps
+    steps = pilot_progress.bank(steps, at, FIXES_STEP)
+    return pilot_progress.resume(steps, at, CLOSE_OUT_STEP, reason=FIXES_PAUSE)
+
+
+def fixes_launch_steps(state) -> list[dict] | None:
+    """The list the fixes pass's launcher publishes, from state.json as it
+    stood before the pass was spawned: the close-out continuation's
+    (`close_out_steps`), with `fixes` pending at its end where it holds
+    none, so that the pass's step stands listed before its `wait` publishes
+    it begun (D2), and as it stood where an earlier attempt left one. None
+    with no state."""
+    if not isinstance(state, dict):
+        return None
+    steps = close_out_steps(state)
+    if not any(s.get("code") == FIXES_STEP for s in steps):
+        steps.append(pilot_progress.make_step(FIXES_STEP, FIXES_LABEL))
+    return steps
+
+
+def steps_shown(state) -> list | None:
+    """The list a `wait` on a loop's state file publishes and names in its
+    `running` line: the loop's `progress`, or, where the driver is the fixes
+    pass, the close-out continuation's (`close_out_steps`) — that work
+    item's, never the run's (D2). None where it holds none."""
+    if not isinstance(state, dict):
+        return None
+    driver = state.get("driver")
+    if isinstance(driver, dict) and driver.get("pass") == "fixes":
+        return close_out_steps(state) or None
+    steps = state.get("progress")
+    return steps if isinstance(steps, list) else None
+
+
+class StatePublisher(pilot_progress.Publisher):
+    """`wait`'s publisher over a loop's state file, sending the list
+    `steps_shown` reads from it."""
+
+    def _read(self) -> list[dict] | None:
+        try:
+            state = json.loads(self.state_path.read_text())
+        except (OSError, ValueError):
+            return None
+        steps = steps_shown(state)
+        if steps is None:
+            return None
+        return pilot_progress.sanitize(
+            steps, why=True, gate_mark_minutes=self.gate_mark_minutes,
+            loop=self.loop)
+
+
+def close_out_progress(steps: list[dict], state: str, at: str) -> list[dict]:
+    """The close-out continuation's list once its session's `progress
+    --close-out <state>` took it at `at`. `pending`: a fresh list, the
+    `close-out` step pending alone — each continuation is a work item of
+    its own, whose list starts empty. `active`: `close-out` started, put on
+    the list where the pending was skipped. `done`: `close-out` finished,
+    with the seconds its clock ran — none where it never started — and the
+    rest as it stood, `fixes` done with its own."""
+    if state == pilot_progress.PENDING:
+        return [pilot_progress.make_step(CLOSE_OUT_STEP, CLOSE_OUT_LABEL)]
+    if state == pilot_progress.ACTIVE:
+        return pilot_progress.start(steps, CLOSE_OUT_STEP, CLOSE_OUT_LABEL, at)
+    if not any(s.get("code") == CLOSE_OUT_STEP for s in steps):
+        steps = [pilot_progress.make_step(CLOSE_OUT_STEP, CLOSE_OUT_LABEL),
+                 *steps]
+    return pilot_progress.finish_step(steps, CLOSE_OUT_STEP, at)
+
+
+def cmd_progress(args) -> None:
+    """`progress --close-out`: the close-out continuation's session's
+    publish of its own step (D2) — pending in a call of its own, then
+    active before its first step, then done after its last — kept in
+    state.json's CLOSE_OUT_STEPS between the calls (`close_out_progress`)
+    and sent with the rest of that list, `fixes` as it stands, from this
+    process's own environment (pilot_progress.publish_steps). The run's
+    `progress` and `updated_at` are left as the run left them. Refused
+    (exit 2) while a driver holds run.lock, whose state it would write
+    under; else exit 0 whatever Pilot answered, what could not be
+    published in log.txt and nothing on stdout."""
+    slice_dir = Path(args.slice_dir)
+    if not slice_dir.is_dir():
+        print(f"Error: slice directory not found: {slice_dir}",
+              file=sys.stderr)
+        sys.exit(2)
+    state_path = slice_dir / "state.json"
+    state = _read_json(state_path)
+    if not isinstance(state, dict):
+        print(f"Error: {state_path} does not exist or does not read — the "
+              "run loop has not run this slice, and the close-out follows "
+              "its run.", file=sys.stderr)
+        sys.exit(2)
+    if lock_held(slice_dir / "run.lock"):
+        print(f"Error: {slice_dir / 'run.lock'} is held — a driver is running "
+              "this slice, and its state is its own: publish the close-out's "
+              "step once it has ended.", file=sys.stderr)
+        sys.exit(2)
+    log_path = slice_dir / "log.txt"
+
+    def log_line(text: str) -> None:
+        _append_wait_line(log_path, text, tag="progress")
+
+    held = state.get(CLOSE_OUT_STEPS)
+    steps = close_out_progress(
+        [dict(s) for s in held if isinstance(s, dict)]
+        if isinstance(held, list) else [], args.close_out, _now_iso())
+    state[CLOSE_OUT_STEPS] = steps
+    _write_state(state_path, state)
+    RunRecords(run_records_dir(slice_dir), log_line).write("state.json", state)
+    pilot_progress.publish_steps(steps, log_line)
+    sys.exit(0)
+
+
 def run_detached(loop, slice_arg: Path, script: Path = SCRIPT,
                  method: str = "run", first=None) -> None:
     """`run --detach`, either loop's, and `fixes --detach`: the driver goes
@@ -15709,9 +15974,9 @@ def run_detached(loop, slice_arg: Path, script: Path = SCRIPT,
     `method` it runs (`run()`, or the fixes pass's `fixes()`); `script` is
     the loop's own file, whose `stop` and `wait` the lines name. `first`,
     where given, is called once the driver has started and before the lines
-    hand the run back — a fresh run's first publication
-    (`publish_pending_first`); whatever it raises is dropped, so it never
-    fails the launch."""
+    hand the run back — a launch's first publication (`publish_pending_first`,
+    `publish_as_it_stood`, plan_loop's `publish_launch`); whatever it raises
+    is dropped, so it never fails the launch."""
 
     def body(started) -> None:
         loop.on_start = started
@@ -15864,8 +16129,9 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     with `relaunch`'s flags (6) — or, `relaunch` a callable, the command
     `relaunch(state, where)` names. Liveness is the flock, never the pid.
 
-    Meanwhile it publishes the driver's steps to Pilot (pilot_progress): at
-    its first probe, at every probe that finds the list changed, and once
+    Meanwhile it publishes the driver's steps to Pilot (pilot_progress), the
+    list `steps_shown` reads — a fixes pass's, the close-out continuation's:
+    at its first probe, at every probe that finds the list changed, and once
     more as it returns, each step's mark computed at the publication against
     the `gate_mark_minutes` of the repo it is run from (`gate_mark_minutes`),
     so a code round's gate still running marks its step as soon as it passes
@@ -15887,7 +16153,7 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     if for_seconds is None:
         for_seconds = wait_default()
     deadline = time.monotonic() + for_seconds
-    progress = pilot_progress.Publisher(
+    progress = StatePublisher(
         state_path, lambda text: _append_wait_line(slice_dir / log_name, text),
         gate_mark_minutes=gate_mark_minutes())
     progress.publish(force=True)
@@ -15903,7 +16169,7 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
     state = _read_json(state_path) or {}
     record = state.get("exit")
     if lock_held(lock_path):
-        stands = pilot_progress.active_summary(state.get("progress"))
+        stands = pilot_progress.active_summary(steps_shown(state))
         code, lines = WAIT_RUNNING, [
             f"running: {stands}" if stands else "running",
             f"next: python3 {script} wait {where}", wait_timeout_line()]
@@ -16252,6 +16518,19 @@ def main() -> None:
     fixes_p.add_argument("--spec-push", action="store_true",
                          help=SPEC_PUSH_HELP)
     fixes_p.set_defaults(func=cmd_fixes)
+
+    progress_p = sub.add_parser(
+        "progress", help="the close-out continuation's publish of its own "
+                         "step to Pilot, beside the fixes pass's; exits 0 "
+                         "whatever Pilot answered, 2 under a running driver")
+    progress_p.add_argument("slice_dir", help="path to the slice folder, "
+                                              "slices/completed/ included")
+    progress_p.add_argument("--close-out", dest="close_out", required=True,
+                            choices=pilot_progress.STATES,
+                            help="the close-out's state: pending in a call of "
+                                 "its own, active before its first step, "
+                                 "done after its last, with its seconds")
+    progress_p.set_defaults(func=cmd_progress)
 
     wait_p = sub.add_parser(
         "wait", help="wait on a slice's driver, in the foreground; exit 0 "

@@ -18068,12 +18068,44 @@ def test_a_fresh_detached_run_lists_every_step_pending_before_its_first_wait():
             in (slice_dir / "log.txt").read_text()
 
 
-def test_a_resumed_detached_run_publishes_nothing_before_its_wait():
+def test_a_resumed_detached_run_lists_its_steps_as_they_stood_before_it():
+    """AIWF-200's comment: a resume's launcher sends the list state.json
+    held before the driver was spawned — done steps done, with their time,
+    the step the stop left active still active, the rest pending — not
+    what the driver has moved on to since, so a step it starts after the
+    launch stood on the work item's first list. One with no list sends
+    nothing, and a refused send never fails the launch."""
+    stood = [
+        {"code": "P1.code", "label": "P1 · First", "state": "done",
+         "kind": "code-writer", "duration": 600, "spent": 600,
+         "conversations": ["sess-1"]},
+        {"code": "P1.review", "label": "P1 · review", "state": "active",
+         "kind": "review", "spent": 90, "conversations": ["sess-2"]},
+        {"code": "sweep", "label": "Gate sweep", "state": "pending",
+         "kind": "sweep"}]
+    moved = [dict(stood[0]), dict(stood[1], state="done", duration=95),
+             dict(stood[2], state="active")]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=dict(RUNNING_STATE, progress=stood))
+        out, sent = launch(slice_dir, True, moved)
+        assert out.splitlines()[-2].startswith("next: ")
+        assert sent == [[
+            {"code": "P1.code", "label": "P1 · First", "state": "done",
+             "kind": "code-writer", "duration": 600, "marked": False,
+             "conversations": ["sess-1"]},
+            {"code": "P1.review", "label": "P1 · review", "state": "active",
+             "kind": "review", "marked": False, "conversations": ["sess-2"]},
+            {"code": "sweep", "label": "Gate sweep", "state": "pending",
+             "kind": "sweep", "marked": False, "conversations": []}]]
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir = run_record(tmp, state=dict(RUNNING_STATE))
         out, sent = launch(slice_dir, True, steps_of("P1.code",
                                                      state="active"))
         assert sent == [] and out.splitlines()[-2].startswith("next: ")
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=dict(RUNNING_STATE, progress=stood))
+        out, sent = launch(slice_dir, True, moved, mode="refused")
+        assert len(sent) == 1 and out.splitlines()[-2].startswith("next: ")
 
 
 def test_a_dry_run_writes_no_list():
@@ -19770,11 +19802,17 @@ def test_two_fixes_gated_green_are_landed_pushed_and_ruled_with_upstream_hashes(
                 if h["role"] in ("wrap-up", "fixes-gate", "fixes-doc-gate")] == [
             ("wrap-up", 1, "done"), ("fixes-gate", 1, "green"),
             ("fixes-doc-gate", 1, "green")]
-        # Pilot's tile: the step, done, saying what came of it
-        assert state["progress"][-1] == {
+        # Pilot's tile: the close-out continuation's step, done, saying what
+        # came of it, with its session and its time; the run's list is the
+        # run's, as the run left it (D2)
+        assert state["progress"] == [
+            {"code": "wrap-up", "label": "Wrap-up", "state": "done"}]
+        [fixes] = state["close_out_progress"]
+        assert {k: fixes[k] for k in ("code", "label", "state", "kind",
+                                      "conversations")} == {
             "code": "fixes", "label": "Fixes · 2 landed", "state": "done",
-            "kind": "fixes", "conversations": ["sess-wrap-1"],
-            "started": state["progress"][-1]["started"]}
+            "kind": "fixes", "conversations": ["sess-wrap-1"]}
+        assert isinstance(fixes["duration"], int)
         assert state["exit"]["pass"] == "fixes"
         code, out, _ = wait(w.slice_dir)
         assert (code, out.splitlines()) == (0, [
@@ -20120,6 +20158,277 @@ def test_wait_relaunches_a_gone_fixes_pass_with_its_own_command():
         assert out.splitlines()[1] == (
             f"next: python3 {run_loop.SCRIPT} fixes "
             f"{os.path.abspath(slice_dir)} --detach")
+
+
+# -- the close-out continuation's steps (D2, AIWF-200) --------------------------
+#
+# The continuation is a work item of its own, and its list is the close-out's
+# steps alone, state.json's `close_out_progress`: `close-out`, which its
+# session publishes through `progress --close-out`, and `fixes` where a fixes
+# pass runs, which its launcher lists pending and its `wait` carries on, the
+# close-out's clock standing paused while it runs.
+
+DONE_RUN = [{"code": "wrap-up", "label": "Wrap-up", "state": "done",
+             "kind": "wrap-up", "duration": 50, "spent": 50}]
+
+
+def close_out_step(slice_dir, state):
+    return call(run_loop.cmd_progress, slice_dir=str(slice_dir),
+                close_out=state)
+
+
+def sent_step(code, state, duration=None, conversations=(), label=None):
+    """A step of the continuation's list as a publication sends it."""
+    step = {"code": code, "label": label or {"close-out": "Close-out",
+                                             "fixes": "Fixes"}[code],
+            "state": state, "kind": code}
+    if duration is not None:
+        step["duration"] = duration
+    return dict(step, marked=False, conversations=list(conversations))
+
+
+def done_run(tmp, **extra):
+    return run_record(tmp, state={
+        "run_phase": "done", "exit": {"code": 0, "ts": "2026-11-15T10:00:00+00:00"},
+        "updated_at": "2026-11-15T10:00:00+00:00", "progress": DONE_RUN,
+        **extra})
+
+
+def test_a_continuation_with_no_fixes_pass_publishes_its_close_out_alone():
+    """`--close-out pending`, in a call of its own, then `active`, then
+    `done` with the seconds between: the continuation's list is the
+    close-out's step alone, never the run's, kept in state.json between the
+    calls, and the run's record is left as the run left it."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        slice_dir = done_run(tmp)
+        with pilot() as fake:
+            assert close_out_step(slice_dir, "pending") == (0, "", "")
+            assert close_out_step(slice_dir, "active") == (0, "", "")
+            clock[0] += timedelta(minutes=12, seconds=3)
+            assert close_out_step(slice_dir, "done") == (0, "", "")
+        assert fake.sent == [[sent_step("close-out", "pending")],
+                             [sent_step("close-out", "active")],
+                             [sent_step("close-out", "done", 723)]]
+        state = load_state(slice_dir)
+        assert state["progress"] == DONE_RUN
+        assert state["updated_at"] == "2026-11-15T10:00:00+00:00"
+        [step] = state["close_out_progress"]
+        assert (step["code"], step["state"], step["duration"]) == (
+            "close-out", "done", 723)
+        # a later continuation, a work item of its own, starts a list anew
+        with pilot() as fake:
+            close_out_step(slice_dir, "pending")
+        assert fake.sent == [[sent_step("close-out", "pending")]]
+
+
+def test_a_close_out_done_with_no_active_before_it_carries_no_duration():
+    for first in (None, "pending"):
+        with tempfile.TemporaryDirectory() as tmp:
+            slice_dir = done_run(tmp)
+            with pilot() as fake:
+                if first:
+                    close_out_step(slice_dir, first)
+                assert close_out_step(slice_dir, "done") == (0, "", "")
+            assert fake.sent[-1] == [sent_step("close-out", "done")]
+
+
+def test_close_out_progress_is_refused_under_a_running_driver_or_no_run():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = done_run(tmp)
+        with pilot() as fake, holding(slice_dir):
+            code, out, err = close_out_step(slice_dir, "done")
+        assert (code, out, fake.sent) == (2, "", [])
+        assert "run.lock is held" in err
+        assert "close_out_progress" not in load_state(slice_dir)
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp)
+        code, _, err = close_out_step(slice_dir, "pending")
+        assert code == 2 and "state.json" in err
+
+
+def launch_fixes(slice_dir, driver_state):
+    """`fixes --detach` with a pass that has written `driver_state`'s lists
+    by the time the launcher could read them: what reached Pilot."""
+    def detach(body, log_path):
+        state = _read_state(slice_dir)
+        state.update(driver_state)
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        return 4242, 0, ""
+
+    out = io.StringIO()
+    args = type("Args", (), {"slice_dir": str(slice_dir), "verbose": False,
+                             "detach": True, "spec_push": False})()
+    with pilot() as fake, patched(run_loop, detach=detach), \
+            contextlib.redirect_stdout(out):
+        run_loop.cmd_fixes(args)
+    assert out.getvalue().splitlines()[-2].startswith("next: ")
+    return fake.sent
+
+
+def test_the_fixes_launcher_adds_fixes_pending_to_the_continuations_list():
+    """D2: before it hands back, the fixes pass's launcher publishes the
+    continuation's list as it stood before the pass was spawned, `fixes`
+    pending after the close-out, whatever the pass started meanwhile; a
+    relaunch keeps the one `fixes` step as an earlier attempt left it, and
+    a state from before the continuation's list moves a pass's step still
+    in flight over from the run's."""
+    active = {"code": "close-out", "label": "Close-out", "state": "active",
+              "kind": "close-out", "started": "2026-11-20T09:00:00+01:00"}
+    begun = {"close_out_progress": [
+        dict(active, paused="fixes"),
+        {"code": "fixes", "label": "Fixes", "state": "active", "kind": "fixes",
+         "started": "2026-11-20T09:05:00+01:00"}]}
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = done_run(tmp, close_out_progress=[active])
+        assert launch_fixes(slice_dir, begun) == [[
+            sent_step("close-out", "active"), sent_step("fixes", "pending")]]
+    with tempfile.TemporaryDirectory() as tmp:
+        left = {"code": "fixes", "label": "Fixes", "state": "active",
+                "kind": "fixes", "spent": 40,
+                "conversations": ["sess-wrap-1"]}
+        slice_dir = done_run(tmp, close_out_progress=[active, left])
+        assert launch_fixes(slice_dir, begun) == [[
+            sent_step("close-out", "active"),
+            sent_step("fixes", "active", conversations=["sess-wrap-1"])]]
+    with tempfile.TemporaryDirectory() as tmp:
+        old = {"code": "fixes", "label": "Fixes", "state": "active",
+               "kind": "fixes"}
+        slice_dir = done_run(tmp)
+        state = load_state(slice_dir)
+        state["progress"] = DONE_RUN + [old]
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        assert launch_fixes(slice_dir, {}) == [[sent_step("fixes", "active")]]
+
+
+def test_a_fixes_pass_ending_banks_its_step_and_runs_the_close_out_again():
+    """`fixes_ended`, at the pass's end, its exit or a killed driver's last
+    sign of life: `fixes` banked up to it and the close-out's clock, paused
+    for the pass, running from it; with no time known, the open stretch
+    dropped and the close-out left paused. `take_close_out_steps` moves a
+    pass's step still in flight over from the run's list of an older state,
+    and leaves one an earlier continuation finished."""
+    t0 = datetime(2026, 11, 20, 9, 0).astimezone()
+    at = (t0 + timedelta(seconds=90)).isoformat()
+    steps = [{"code": "close-out", "label": "Close-out", "state": "active",
+              "spent": 10, "paused": "fixes"},
+             {"code": "fixes", "label": "Fixes", "state": "active",
+              "spent": 5, "started": t0.isoformat()}]
+    close, fixes = run_loop.fixes_ended(steps, at)
+    assert (close["started"], close.get("paused"), close["spent"]) == (
+        at, None, 10)
+    assert (fixes["spent"], fixes.get("started")) == (95, None)
+    close, fixes = run_loop.fixes_ended(steps, None)
+    assert (close["paused"], fixes["spent"], fixes.get("started")) == (
+        "fixes", 5, None)
+    halted = [dict(steps[0], paused=run_loop.USAGE_HALT)]
+    assert run_loop.fixes_ended(halted, at) == halted
+    old = {"code": "fixes", "label": "Fixes", "state": "active"}
+    state = {"progress": DONE_RUN + [old]}
+    assert run_loop.take_close_out_steps(state) == [old]
+    assert state["progress"] == DONE_RUN
+    state = {"progress": DONE_RUN + [dict(old, state="done")]}
+    assert run_loop.take_close_out_steps(state) == []
+    assert len(state["progress"]) == 2
+
+
+def pass_world(tmp):
+    return fixes_world(tmp, plant=lambda w: ruled_fix(
+        w.slice_dir, "the page reads wrong"))
+
+
+def test_the_fixes_pass_publishes_the_continuations_list_and_its_own_time():
+    """D2: the pass's steps are the continuation's — `wait` publishes the
+    close-out and `fixes`, never the run's — `fixes` active with its session
+    while it runs and done with its seconds, the close-out's clock paused
+    meanwhile, so `--close-out done` gives the close-out its own work alone,
+    and the fixes pass's debrief entry stands under `fixes`."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            fake_clock() as clock:
+        w = pass_world(tmp)
+        with pilot():
+            close_out_step(w.slice_dir, "pending")
+            close_out_step(w.slice_dir, "active")
+        clock[0] += timedelta(seconds=60)           # the absorb
+        during = []
+
+        def works(loop):
+            during.append(load_state(loop.slice_dir)["close_out_progress"])
+            clock[0] += timedelta(seconds=300)
+            fix_in(w.repo, "B1")(loop)
+
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True],
+                      wrap_ups=[(FIXES_DONE, works)])
+        assert fixes_to_exit(r) == 0
+        [(close, fixes)] = during
+        assert (close["state"], close["paused"], close["spent"]) == (
+            "active", "fixes", 60)
+        assert (fixes["state"], fixes["conversations"]) == (
+            "active", ["sess-wrap-1"])
+        with pilot() as fake:
+            code, _, _ = wait(w.slice_dir)
+        assert code == 0
+        assert fake.sent[-1] == [
+            sent_step("close-out", "active"),
+            sent_step("fixes", "done", 300, ["sess-wrap-1"],
+                      label="Fixes · 1 landed")]
+        clock[0] += timedelta(seconds=120)          # the rest of the rulings
+        with pilot() as fake:
+            assert close_out_step(w.slice_dir, "done") == (0, "", "")
+        assert fake.sent == [[
+            sent_step("close-out", "done", 60 + 120),
+            sent_step("fixes", "done", 300, ["sess-wrap-1"],
+                      label="Fixes · 1 landed")]]
+        state = load_state(w.slice_dir)
+        assert [s["code"] for s in state["progress"]] == ["wrap-up"]
+        [entry] = json.loads((w.slice_dir / "debrief.json").read_text())[
+            "entries"]
+        assert (entry["step"], entry["section"]) == ("fixes", "Fixes")
+
+
+def test_a_fixes_pass_relaunched_after_an_interrupt_keeps_one_fixes_step():
+    """The interrupt banks `fixes` and lets the close-out's clock run
+    again, the relaunch starts the same step with the time it ran kept,
+    and the close-out counts the time between the two, the session's
+    own."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            fake_clock() as clock:
+        w = pass_world(tmp)
+        with pilot():
+            close_out_step(w.slice_dir, "pending")
+            close_out_step(w.slice_dir, "active")
+        clock[0] += timedelta(seconds=10)
+
+        def cut(loop):
+            clock[0] += timedelta(seconds=100)
+            raise KeyboardInterrupt
+
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo,
+                      wrap_ups=[(FIXES_DONE, cut)])
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert fixes_to_exit(r) == 130
+        close, fixes = load_state(w.slice_dir)["close_out_progress"]
+        assert (fixes["state"], fixes["spent"]) == ("active", 100)
+        assert "started" not in fixes
+        assert "paused" not in close and close["spent"] == 10
+        clock[0] += timedelta(seconds=30)           # the session relaunches
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo, doc_gates=[True],
+                      wrap_ups=[(FIXES_DONE, doing(advancing(clock, 200),
+                                                   fix_in(w.repo, "B1")))])
+        r.wrap_up_sessions.append({})       # its session is the second
+        assert fixes_to_exit(r) == 0
+        steps = load_state(w.slice_dir)["close_out_progress"]
+        assert [(s["code"], s["state"]) for s in steps] == [
+            ("close-out", "active"), ("fixes", "done")]
+        assert steps[1]["duration"] == 300
+        assert steps[1]["conversations"] == ["sess-wrap-1", "sess-wrap-2"]
+        with pilot():
+            close_out_step(w.slice_dir, "done")
+        assert load_state(w.slice_dir)["close_out_progress"][0][
+            "duration"] == 10 + 30
 
 
 
