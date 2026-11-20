@@ -735,8 +735,10 @@ end lines say it an entry a line: `landed: B3 <sha>`, `carded: T4 — <reason>`,
 `fixes: nothing was ruled fix now`.
 
 - **Nothing marked, nothing done.** Where `close_out.py worklist --fixes` names nothing, the pass
-  ends at once, with no dispatch and no step started: a `fixes` step its detached launcher listed
-  stays `pending`, so the skill launches the pass only where a ruling is marked.
+  ends at once, with no dispatch: the `fixes` step its launcher listed `pending` is done unrun,
+  with no duration, as it is wherever the pass ends without starting it, a refusal past its start
+  included, so the continuation's list is whole. The skill launches the pass only where a ruling
+  is marked.
 - **Branches of its own.** The store is committed as the pass found it, and the targets are set
   up as at a run's start. Each code repo the slice touched and the plan does not hold gets
   `phase/<NNN>-fixes`, cut from its base; where the project pushes, the base is fast-forwarded to

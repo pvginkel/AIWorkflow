@@ -20331,6 +20331,53 @@ def test_a_fixes_pass_ending_banks_its_step_and_runs_the_close_out_again():
     assert len(state["progress"]) == 2
 
 
+def test_a_fixes_pass_that_never_runs_finishes_its_listed_step_unrun():
+    """AIWF-200: the `fixes` step the launcher listed pending is on record
+    from the pass's start; a pass that finds nothing marked, or is refused
+    past its start, finishes it unrun, with no duration, so the
+    continuation's list is whole; the close-out's clock runs on, and
+    `--close-out done` sees both steps done."""
+    if shutil.which("git") is None:
+        return
+    with tempfile.TemporaryDirectory() as tmp, plain_git(), \
+            fake_clock() as clock:
+        w = fixes_world(tmp, plant=lambda w: close_out.append_entry(
+            w.slice_dir, "event", "resumed", "b", consequence="none"))
+        with pilot():
+            close_out_step(w.slice_dir, "pending")
+            close_out_step(w.slice_dir, "active")
+        clock[0] += timedelta(seconds=40)
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+        assert fixes_to_exit(r) == 0
+        assert not r.wrap_up_sessions
+        close, fixes = load_state(w.slice_dir)["close_out_progress"]
+        assert (fixes["code"], fixes["state"]) == ("fixes", "done")
+        assert "duration" not in fixes
+        assert (close["state"], close.get("paused")) == ("active", None)
+        with pilot() as fake:
+            assert wait(w.slice_dir)[0] == 0
+        assert fake.sent[-1] == [sent_step("close-out", "active"),
+                                 sent_step("fixes", "done")]
+        clock[0] += timedelta(seconds=20)
+        with pilot() as fake:
+            close_out_step(w.slice_dir, "done")
+        assert fake.sent == [[sent_step("close-out", "done", 60),
+                              sent_step("fixes", "done")]]
+    with tempfile.TemporaryDirectory() as tmp, plain_git():
+        # refused past its start: the projects could not be listed
+        w = pass_world(tmp)
+
+        def refused(cwd):
+            raise run_loop.Bailout("kc", details="kc project list failed")
+
+        r = FixesLoop(w.slice_dir, [], repo_root=w.repo)
+        with patched(run_loop, load_project_dirs=refused), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert fixes_to_exit(r) == 3
+        [fixes] = load_state(w.slice_dir)["close_out_progress"]
+        assert (fixes["state"], "duration" in fixes) == ("done", False)
+
+
 def pass_world(tmp):
     return fixes_world(tmp, plant=lambda w: ruled_fix(
         w.slice_dir, "the page reads wrong"))

@@ -5877,7 +5877,7 @@ class RunLoop:
             with contextlib.suppress(Exception):
                 if fixes and isinstance(held.get(CLOSE_OUT_STEPS), list):
                     held[CLOSE_OUT_STEPS] = fixes_ended(
-                        held[CLOSE_OUT_STEPS], at)
+                        fixes_unrun(held[CLOSE_OUT_STEPS], at), at)
         state["exit"] = self.state["exit"] = {"code": code, "ts": at,
                                               **(extra or {})}
         try:
@@ -14236,6 +14236,10 @@ class RunLoop:
         steps = take_close_out_steps(self.state)
         if killed:
             steps = fixes_ended(steps, last_seen)
+        # The step its launcher listed pending, on record from here on: the
+        # pass starts it, or ends without running and finishes it unrun.
+        if not any(s.get("code") == FIXES_STEP for s in steps):
+            steps.append(pilot_progress.make_step(FIXES_STEP, FIXES_LABEL))
         self.state[CLOSE_OUT_STEPS] = steps
         self._steps_key = CLOSE_OUT_STEPS
         self._save_state()
@@ -14304,7 +14308,8 @@ class RunLoop:
     def _fixes_begin(self) -> dict | None:
         """The pass's record, fresh, over what `worklist --fixes` names; None,
         and an outcome `nothing` on record, where it names nothing — the
-        pass then ends at once, no dispatch, no step."""
+        pass then ends at once, no dispatch, its step done unrun
+        (`fixes_unrun`)."""
         now = _now_iso()
         try:
             items = fixes_worklist(self.slice_dir)
@@ -14317,6 +14322,10 @@ class RunLoop:
                 "started_at": now, "ended_at": now, "entries": {}, "repos": {},
                 "gates": []}
             self._save_state()
+            # Its step, listed pending, done unrun with no duration, so the
+            # continuation's list is whole and no estimate waits on it.
+            self._progress(lambda steps: fixes_ended(fixes_unrun(steps, now),
+                                                     now))
             self.log("[fixes] " + (reason or "nothing is ruled fix now")
                      + " — the pass ends, nothing done")
             return None
@@ -15856,6 +15865,18 @@ def fixes_ended(steps: list[dict], at) -> list[dict]:
         return steps
     steps = pilot_progress.bank(steps, at, FIXES_STEP)
     return pilot_progress.resume(steps, at, CLOSE_OUT_STEP, reason=FIXES_PAUSE)
+
+
+def fixes_unrun(steps: list[dict], at) -> list[dict]:
+    """The close-out continuation's list with a `fixes` step still pending
+    — listed by the pass's launcher, never started: the pass found nothing
+    marked, or stopped before it began — done unrun at `at`, with no
+    duration, so the list is whole and no estimate counts a step that never
+    runs. A `fixes` step that ran is left as it is."""
+    if not any(s.get("code") == FIXES_STEP
+               and s.get("state") == pilot_progress.PENDING for s in steps):
+        return steps
+    return pilot_progress.finish_step(steps, FIXES_STEP, at)
 
 
 def fixes_launch_steps(state) -> list[dict] | None:
