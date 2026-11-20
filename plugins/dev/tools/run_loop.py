@@ -86,20 +86,25 @@ new session — because a caller's background task is killed at its own cap
 and a slice outlives it. The parent returns once the driver holds run.lock
 and is past its refusals (a refusal comes back as the parent's own exit 2,
 with the message), printing the driver's pid and the `wait` command that
-follows it; from then on the driver's stdout is gone and its stderr goes to
-log.txt. Its exit code goes to disk instead: every run that got that far
-records `exit: {code, ts}` in state.json as its last write, and a --resume
-clears it — so a run with no `exit` and no live driver was killed from
-outside. `wait` blocks on the run.lock flock (liveness is the lock, never
-the pid) for at most --for seconds and prints a signal — running, ended
-with its exit, or gone — and meanwhile publishes the steps the driver keeps
-in state.json's `progress` to Pilot (pilot_progress.py), which the driver
-never calls itself; `stop` SIGINTs the driver — its
-KeyboardInterrupt path, the same as Ctrl-C on an attached run. run.lock's
-note names the driver's KubeCoder environment, host and pid, with a
-heartbeat rewritten every minute while it holds the lock; state.json's
-`driver` records the same, and `status` prints it beside the lock's
-liveness — a pod's `ps` cannot see a driver in another environment.
+follows it — a fresh run's launcher, not a resume's, first sending Pilot the
+seeded list with every step pending (`publish_pending_first`); from then on
+the driver's stdout is gone and its stderr goes to log.txt. Its exit code
+goes to disk instead: every run that got that far records `exit: {code,
+ts}` in state.json as its last write, and a --resume clears it — so a run
+with no `exit` and no live driver was killed from outside. `wait` blocks
+on the run.lock flock (liveness is the lock, never the pid) for at most
+--for seconds and prints a signal — running, ended with its exit, or gone —
+and meanwhile publishes the steps the driver keeps in state.json's
+`progress` to Pilot (pilot_progress.py), which the driver never calls
+itself: each with its kind, the sessions of the rounds that did its work
+from each round's start, a done one's whole duration — a usage halt's sleep
+and the time the run stood stopped left out — and a code round's mark once
+its own gate runs pass the repo's `[progress] gate_mark_minutes`; `stop`
+SIGINTs the driver — its KeyboardInterrupt path, the same as Ctrl-C on an
+attached run. run.lock's note names the driver's KubeCoder environment, host
+and pid, with a heartbeat rewritten every minute while it holds the lock;
+state.json's `driver` records the same, and `status` prints it beside the
+lock's liveness — a pod's `ps` cannot see a driver in another environment.
 
 The driver pushes the spec repo after each commit of its own there and after
 each session it dispatched returns, where `push.enabled` is on and the launch
@@ -4591,6 +4596,9 @@ fix for, and `cards`, those you took back.
 
 # The fixes pass's step on Pilot's tile, beside the run's (`progress`).
 FIXES_STEP = pilot_progress.step_code("fixes")
+# Why a step's clock stands paused through the session-limit sleep
+# (`_wait_out_session_limit`), which a resume lifts as well.
+USAGE_HALT = "usage halt"
 FIXES_LABEL = "Fixes"
 
 # The test-phase dispatch's prd line: fixed, unless plan.md's `## Driver
@@ -5828,7 +5836,16 @@ class RunLoop:
         state = _read_json(self.state_path)
         if state is None:
             return
-        state["exit"] = self.state["exit"] = {"code": code, "ts": _now_iso(),
+        at = _now_iso()
+        # The time the run then stands stopped — a hand-back's wait on the
+        # operator above all — is no time of the step it stopped in: its
+        # open stretch is banked here, and a resume's clock runs on from it.
+        for held in (state, self.state):
+            with contextlib.suppress(Exception):
+                if isinstance(held.get("progress"), list):
+                    held["progress"] = pilot_progress.bank(held["progress"],
+                                                           at)
+        state["exit"] = self.state["exit"] = {"code": code, "ts": at,
                                               **(extra or {})}
         try:
             _write_state(self.state_path, state)
@@ -7050,7 +7067,114 @@ class RunLoop:
         return ", ".join(f"P{p.id}" for p in self._load_plan() if not p.done)
 
     def _progress_done(self) -> None:
-        self._progress(pilot_progress.finish_active)
+        at = _now_iso()
+        self._progress(lambda steps: pilot_progress.finish_active(steps, at))
+
+    def _add_conversation(self, sid: str) -> bool:
+        """Session `sid` among the active step's conversations — the
+        round's, from the moment its session is noted (AIWF-188): the
+        writer's, the reviewer's, the test-fixer's inside its gate's code
+        step, a consult's, the test phase's, the doc phase's, the wrap-up's.
+        Whether the list changed; the caller saves the state, so the next
+        `wait` publishes it."""
+        steps = self.state.get("progress")
+        if not isinstance(steps, list):
+            return False
+        edited = pilot_progress.add_conversation(steps, None, sid)
+        if edited == steps:
+            return False
+        self.state["progress"] = edited
+        return True
+
+    def _gate_mark_minutes(self) -> int:
+        """The repo's `[progress] gate_mark_minutes`: the config the run
+        forced, or, before it has (a resume's first write), the file read
+        without the refusal a broken one would be."""
+        if self._cfg is not None:
+            return self._cfg.gate_mark_minutes
+        return gate_mark_minutes(self.repo_root)
+
+    @contextlib.contextmanager
+    def _gate_clock(self, phase_id: str):
+        """A gate run of the driver's own inside phase `phase_id`'s code
+        round — its gate, the re-gate after a fix, the measurement's re-gate
+        and run on the merge base — timed on the round's step (D3): its start
+        on disk before it runs, so a `wait` publishing meanwhile counts it as
+        it runs, and its seconds added to the round's at its end, the mark
+        kept on the step once they pass the repo's `gate_mark_minutes`. A
+        gate run under any other step (the merge's re-gate, in the review's)
+        is no code round's and is not timed."""
+        step = pilot_progress.active_step(self.state.get("progress"))
+        code = step.get("code") if step else None
+        if not isinstance(code, str) or not code \
+                or pilot_progress.split_code(code)[:2] != (phase_id, "code"):
+            yield
+            return
+        began = _now_iso()
+        self._progress(lambda steps: pilot_progress.edit_step(
+            steps, code, lambda s: pilot_progress.gate_started(s, began)))
+        try:
+            yield
+        finally:
+            ended, minutes = _now_iso(), self._gate_mark_minutes()
+            self._progress(lambda steps: pilot_progress.edit_step(
+                steps, code,
+                lambda s: pilot_progress.gate_ended(s, ended, minutes)))
+
+    def _finish_unrun(self, *names: str) -> None:
+        """Every step of no phase named one of `names` still pending, done
+        unrun, with no duration — a seeded sweep or consult the run went
+        past without taking (a consult already answered on the plan as it
+        stands, a sweep whose record still describes the tree, a resume into
+        the test phase), as an unrun wrap-up is."""
+        at = _now_iso()
+
+        def unrun(step: dict) -> bool:
+            code = step.get("code")
+            return step.get("state") == pilot_progress.PENDING \
+                and isinstance(code, str) and bool(code) \
+                and pilot_progress.split_code(code)[0] is None \
+                and pilot_progress.split_code(code)[1] in names
+
+        def finish(steps: list[dict]) -> list[dict]:
+            for code in [s["code"] for s in steps if unrun(s)]:
+                steps = pilot_progress.finish_step(steps, code, at)
+            return steps
+
+        self._progress(finish)
+
+    def _log_last_written(self) -> str | None:
+        """When log.txt was last written, as ISO text — None with no log."""
+        try:
+            mtime = self.log_path.stat().st_mtime
+        except OSError:
+            return None
+        return datetime.fromtimestamp(mtime).astimezone().isoformat()
+
+    def _restart_clock(self, steps: list[dict],
+                       last_seen: str | None) -> list[dict]:
+        """A resumed run's list, its clocks running from now: the active
+        step's clock restarted, the stretch a killed driver left banked up to
+        `last_seen`, where given (`pilot_progress.restart_clock`); a gate
+        run it left open ended there too, or dropped with no `last_seen`;
+        and a step paused for a session-limit sleep the kill cut short
+        running again — the round it paused is dispatched afresh."""
+        now = _now_iso()
+        minutes = self._gate_mark_minutes()
+        steps = pilot_progress.restart_clock(steps, now, last_seen)
+
+        def close_gate(step: dict) -> dict:
+            if step.get("gate_started") is None \
+                    or step.get("state") == pilot_progress.DONE:
+                return step
+            if last_seen is not None:
+                return pilot_progress.gate_ended(step, last_seen, minutes)
+            step.pop("gate_started")
+            return step
+
+        steps = [close_gate(dict(s)) if isinstance(s, dict) else s
+                 for s in steps]
+        return pilot_progress.resume(steps, now, reason=USAGE_HALT)
 
     @staticmethod
     def _plain_title(phase: Phase) -> str:
@@ -7062,12 +7186,15 @@ class RunLoop:
         """The whole list as far as it is known, where the state has none —
         a fresh run, or a resume of a run started on an older plugin: each
         phase's code and review steps in document order, done where the
-        phase is stamped, then the test phase and the doc phase where the
-        project runs them, and the wrap-up, which every run reaches. A
-        resume's closing steps follow the stage it stopped in: the test
-        phase is behind a run in the doc phase, the doc writer behind its
-        ladder's later stages, and the wrap-up is where the run is from the
-        doc gate on. A list the state holds is kept as it is."""
+        phase is stamped, then the completion check's first gate sweep and
+        first consult, which every run takes (AIWF-199), the test phase and
+        the doc phase where the project runs them, and the wrap-up, which
+        every run reaches. A resume's closing steps follow the stage it
+        stopped in: the sweep and the consult are behind a run that took
+        one already or is past them, the test phase behind a run in the doc
+        phase, the doc writer behind its ladder's later stages, and the
+        wrap-up is where the run is from the doc gate on. A list the state
+        holds is kept as it is."""
         if "progress" in self.state:
             return
         steps = []
@@ -7075,6 +7202,16 @@ class RunLoop:
             steps += pilot_progress.phase_steps(
                 phase.id, self._plain_title(phase), phase.done)
         doc_stage = (self.state.get("doc_phase") or {}).get("stage")
+        past_check = self.state.get("run_phase") in ("test", "docs")
+        for code, label, done in (
+                ("sweep", "Gate sweep",
+                 past_check or bool(self.state.get("sweep_runs"))),
+                ("consult", "Completion consult",
+                 past_check or bool(self.state.get("consult_complete"))
+                 or self._completion_consults() > 0)):
+            steps.append(pilot_progress.make_step(
+                code, label,
+                pilot_progress.DONE if done else pilot_progress.PENDING))
         states = {
             "test": (pilot_progress.DONE
                      if self.state.get("run_phase") == "docs"
@@ -7118,6 +7255,7 @@ class RunLoop:
         resume."""
         self._seed_progress(phases)
         order = [p.id for p in phases]
+        at = _now_iso()
 
         def sync(steps: list[dict]) -> list[dict]:
             for phase in phases:
@@ -7126,7 +7264,7 @@ class RunLoop:
                         steps, phase.id, self._plain_title(phase), order,
                         phase.done)
                 if phase.done:
-                    steps = pilot_progress.finish_phase(steps, phase.id)
+                    steps = pilot_progress.finish_phase(steps, phase.id, at)
             return steps
 
         self._progress(sync)
@@ -7490,6 +7628,8 @@ class RunLoop:
                 verdict, session_id = salvaged
                 returncode, duration_s, nudged, recoveries = 0, 0, False, 0
                 facts = self._round_facts(role, kind, site, record)
+                if session_id and self._add_conversation(session_id):
+                    self._save_state()
             else:
                 (returncode, verdict, session_id, duration_s, nudged,
                  recoveries, facts) = self._dispatch_rounds(
@@ -7533,9 +7673,12 @@ class RunLoop:
         def _note_session(sid: str) -> None:
             self.log(f"{label} session {sid} — transcript "
                      f"{_transcript_path(cwd, sid)}")
+            changed = self._add_conversation(sid)
             in_flight = self.state.get("in_flight")
             if in_flight and in_flight.get("session") != sid:
                 in_flight["session"] = sid
+                changed = True
+            if changed:
                 self._save_state()
 
         nudged = False
@@ -7795,15 +7938,25 @@ class RunLoop:
         # The fallback for a wall Pilot's halt did not prevent, and halt-aware
         # itself: the file is looked for every HALT_POLL seconds, and once it
         # is there the sleep ends and the redispatch's halt point stops the run.
-        remaining = seconds
-        while remaining > 0:
-            if halt_requested():
-                self.log(f"{label} halt requested — the session-limit sleep "
-                         "ends early")
-                return
-            step = min(float(HALT_POLL), remaining)
-            self._sleep(step)
-            remaining -= step
+        # The sleep is no time of the step it falls in (AIWF-198): its clock
+        # stands paused through it, and runs again however the sleep ends.
+        paused_at = _now_iso()
+        self._progress(lambda steps: pilot_progress.pause(
+            steps, paused_at, reason=USAGE_HALT))
+        try:
+            remaining = seconds
+            while remaining > 0:
+                if halt_requested():
+                    self.log(f"{label} halt requested — the session-limit "
+                             "sleep ends early")
+                    return
+                step = min(float(HALT_POLL), remaining)
+                self._sleep(step)
+                remaining -= step
+        finally:
+            resumed_at = _now_iso()
+            self._progress(lambda steps: pilot_progress.resume(
+                steps, resumed_at, reason=USAGE_HALT))
 
     def _sleep(self, seconds: float) -> None:
         """The driver's only wall-clock wait, isolated so tests can take it
@@ -7890,8 +8043,9 @@ class RunLoop:
         ruling = self._gate_ruling(target)
         if ruling is None:
             self._refuse_ungated_github(phase_id, target)
-            return self._run_gate(phase_id, ps, outputs, target, merge_base,
-                                  rerun=rerun)
+            with self._gate_clock(phase_id):
+                return self._run_gate(phase_id, ps, outputs, target,
+                                      merge_base, rerun=rerun)
         self.log(f"[P{phase_id}] test gate for {target.name} waived by "
                  f"plan.md's `## Driver rulings` (substitute: "
                  f"{ruling.substitute_text}) — not run, proceeding "
@@ -9729,8 +9883,9 @@ class RunLoop:
                       landed={"root": str(root), "base": merge_base,
                               "head": head})
             self._save_state()
-            self._progress(
-                lambda steps: pilot_progress.finish_phase(steps, phase_id))
+            merged_at = _now_iso()
+            self._progress(lambda steps: pilot_progress.finish_phase(
+                steps, phase_id, merged_at))
             self._take_why(f"P{phase_id}")
             self.log(f"[P{phase_id}] merged into {base}")
             self.announce(f"P{phase_id} merged")
@@ -10338,8 +10493,9 @@ class RunLoop:
         regate = self._cmd_outcomes(ps, red, passed)
         base_log = outputs / f"measure_r{r}_base.log"
         started, t0 = _now_iso(), time.monotonic()
-        base = self._base_run(phase_id, target, merge_base, branch, red,
-                              base_log)
+        with self._gate_clock(phase_id):
+            base = self._base_run(phase_id, target, merge_base, branch, red,
+                                  base_log)
         if base:
             self._keep_gate(f"P{phase_id}_merge-base", {
                 "ts": _now_iso(), "phase": phase_id, "round": r,
@@ -12300,9 +12456,10 @@ class RunLoop:
             if not self._wrap_up_waits():
                 self.log(f"doc phase disabled in {self.cfg.path.name} — "
                          "skipped; nothing waits for the wrap-up")
-                # Reached, with nothing to do.
+                # Reached, with nothing to do: done unrun, with no duration.
+                at = _now_iso()
                 self._progress(lambda steps: pilot_progress.finish_step(
-                    steps, "wrap-up"))
+                    steps, "wrap-up", at))
                 return
             self.log(f"doc phase disabled in {self.cfg.path.name} — the "
                      "ladder starts at the wrap-up")
@@ -13481,6 +13638,7 @@ class RunLoop:
             self.log(f"{label} session {sid} — transcript "
                      f"{_transcript_path(cwd, sid)}")
             wu["session"] = sid
+            self._add_conversation(sid)
             in_flight = self.state.get("in_flight")
             if in_flight and in_flight.get("session") != sid:
                 in_flight["session"] = sid
@@ -14947,6 +15105,9 @@ class RunLoop:
                       file=sys.stderr)
                 sys.exit(2)
             self._owns_state = True
+            # The old driver's last sign of life, before this one writes a
+            # line: what a killed driver's step ran is counted up to it.
+            last_seen = self._log_last_written()
             self.state = _read_json(self.state_path) or {}
             previous = note_fields(self._slice_lock.previous_note)
             if self.state.get("exit") is None and previous:
@@ -14958,13 +15119,15 @@ class RunLoop:
             # this one may yet be killed before it reattaches. The same write
             # puts this driver's record over the previous one's — the run is
             # wherever this driver runs now. The step the run stopped in is
-            # timed from here on: the time it stood stopped is not `wait`'s
-            # to count.
+            # timed from here on, the time it ran before kept: banked at the
+            # exit on record, or, for a driver killed with none, up to its
+            # last sign of life. The time it stood stopped is not its own.
+            killed = self.state.get("exit") is None
             self.state.pop("exit", None)
             self.state["driver"] = dict(self._slice_lock.driver)
             if isinstance(self.state.get("progress"), list):
-                self.state["progress"] = pilot_progress.restart_clock(
-                    self.state["progress"], _now_iso())
+                self.state["progress"] = self._restart_clock(
+                    self.state["progress"], last_seen if killed else None)
             self._save_state()
             self._reattach = self.state.get("in_flight") or None
             self.state["in_flight"] = None
@@ -15061,6 +15224,9 @@ class RunLoop:
                         resume_at = None
                         continue
                     resume_at = None
+                    # The check is behind the run: a seeded sweep or consult
+                    # it never took is done unrun (AIWF-199).
+                    self._finish_unrun("sweep", "consult")
                     if self._test_phase_under_lock():
                         continue
                     break
@@ -15486,18 +15652,66 @@ def cmd_run(args) -> None:
         return
     print(f"run loop log: {loop.log_path}", flush=True)
     if args.detach:
-        run_detached(loop, Path(args.slice_dir))
+        # A fresh run's steps go to Pilot all pending before any of them is
+        # published begun (AIWF-200); a resume's list is Pilot's already.
+        first = None if args.resume else (
+            lambda: publish_pending_first(loop.state_path, loop.log_path,
+                                          loop.repo_root))
+        run_detached(loop, Path(args.slice_dir), first=first)
         return
     loop.run()
 
 
+def gate_mark_minutes(root: Path | None = None) -> int:
+    """The `[progress] gate_mark_minutes` of the repo at `root` — of the
+    repo this process's cwd is in, where None — as the publishers mark a
+    code round's step against it; pilot_progress.GATE_MARK_MINUTES where
+    there is no repo, no `.aiworkflowrc`, or one that does not read: a
+    publication is never refused over the setting."""
+    try:
+        if root is None:
+            found = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=30)
+            if found.returncode != 0 or not found.stdout.strip():
+                return pilot_progress.GATE_MARK_MINUTES
+            root = Path(found.stdout.strip())
+        return project_config.load(Path(root)).gate_mark_minutes
+    except (OSError, subprocess.SubprocessError, project_config.ConfigError):
+        return pilot_progress.GATE_MARK_MINUTES
+
+
+def publish_pending_first(state_path: Path, log_path: Path,
+                          root: Path | None = None) -> None:
+    """A fresh run's first publication, from the launcher — a process of
+    the session's own, with its live Pilot credentials: the list the driver
+    seeded, every step pending and none with a duration
+    (pilot_progress.pending_first), whatever the driver has started since,
+    so that each step stands listed ahead on Pilot's side when it starts.
+    The first `wait` then publishes it as it stands. Best-effort as every
+    publication is: no list sends nothing, and a send that fails is a line
+    in the slice's log."""
+    state = _read_json(state_path)
+    steps = state.get("progress") if isinstance(state, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return
+    pilot_progress.publish_steps(
+        pilot_progress.pending_first(steps),
+        lambda text: _append_wait_line(log_path, text, tag="launch"),
+        gate_mark_minutes=gate_mark_minutes(root))
+
+
 def run_detached(loop, slice_arg: Path, script: Path = SCRIPT,
-                 method: str = "run") -> None:
+                 method: str = "run", first=None) -> None:
     """`run --detach`, either loop's, and `fixes --detach`: the driver goes
     on in its own session, and this process says how to wait on it. `loop`
     has `log_path`, an `on_start` it calls past its refusals, and the
     `method` it runs (`run()`, or the fixes pass's `fixes()`); `script` is
-    the loop's own file, whose `stop` and `wait` the lines name."""
+    the loop's own file, whose `stop` and `wait` the lines name. `first`,
+    where given, is called once the driver has started and before the lines
+    hand the run back — a fresh run's first publication
+    (`publish_pending_first`); whatever it raises is dropped, so it never
+    fails the launch."""
 
     def body(started) -> None:
         loop.on_start = started
@@ -15509,6 +15723,9 @@ def run_detached(loop, slice_arg: Path, script: Path = SCRIPT,
         sys.stderr.flush()
     if pid is None:
         sys.exit(code)
+    if first is not None:
+        with contextlib.suppress(Exception):
+            first()
     print(f"driver detached: pid {pid} — it outlives this shell; "
           f"`{script.name} stop` interrupts it", flush=True)
     print(f"next: python3 {script} wait {os.path.abspath(slice_arg)}",
@@ -15649,7 +15866,10 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
 
     Meanwhile it publishes the driver's steps to Pilot (pilot_progress): at
     its first probe, at every probe that finds the list changed, and once
-    more as it returns. The driver holds no Pilot credential — this process
+    more as it returns, each step's mark computed at the publication against
+    the `gate_mark_minutes` of the repo it is run from (`gate_mark_minutes`),
+    so a code round's gate still running marks its step as soon as it passes
+    them. The driver holds no Pilot credential — this process
     is the Pilot session's, so its token is the live one. What could not be
     published goes to the slice's log `log_name`, never to the output: the
     signal and the exit code are the same with Pilot there, failing or
@@ -15668,7 +15888,8 @@ def wait_on_driver(slice_dir: Path, state_name: str, lock_name: str,
         for_seconds = wait_default()
     deadline = time.monotonic() + for_seconds
     progress = pilot_progress.Publisher(
-        state_path, lambda text: _append_wait_line(slice_dir / log_name, text))
+        state_path, lambda text: _append_wait_line(slice_dir / log_name, text),
+        gate_mark_minutes=gate_mark_minutes())
     progress.publish(force=True)
     while lock_held(lock_path):
         remaining = deadline - time.monotonic()

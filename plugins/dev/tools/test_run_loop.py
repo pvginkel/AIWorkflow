@@ -17005,6 +17005,13 @@ WAIT_LINE_RE = re.compile(
     r"^\[\d\d:\d\d:\d\d\] \[wait\] Pilot progress not published: (.+)$")
 
 
+def as_sent(steps):
+    """`steps` as a publication sends them: every one with its kind, its
+    mark and its conversations, since a call clears a field it leaves out."""
+    return [dict(s, kind=run_loop.pilot_progress.kind_of(s["code"]),
+                 marked=False, conversations=[]) for s in steps]
+
+
 def test_wait_publishes_at_its_first_probe_each_change_and_its_return():
     first, second = steps_of("P1.code"), steps_of("P1.code", "P1.review")
     with tempfile.TemporaryDirectory() as tmp:
@@ -17016,7 +17023,8 @@ def test_wait_publishes_at_its_first_probe_each_change_and_its_return():
                                       WAIT_POLL=0):
             code, out, err = wait(slice_dir, for_seconds=30)
         assert (code, out, err) == (0, "ended: exit 0\n", "")
-        assert fake.sent == [first, second, second]
+        assert fake.sent == [as_sent(first), as_sent(second),
+                             as_sent(second)]
         assert wait_lines(slice_dir) == []
 
 
@@ -17127,15 +17135,28 @@ def test_a_run_seeds_its_steps_and_takes_them_in_order():
         seen = watching(r, "_spawn", "_run_gate", "_run_sweep_cmd",
                         "_run_doc_gate")
         assert run_to_exit(r) == 0
-        # on disk before the start is reported, for the first `wait`
+        # on disk before the start is reported, for the first `wait`: every
+        # step the run will take, each with its kind, the completion
+        # check's first sweep and consult after the phases (AIWF-199)
         assert seeded == [[
-            {"code": "P1.code", "label": "P1 · First", "state": "pending"},
-            {"code": "P1.review", "label": "P1 · review", "state": "pending"},
-            {"code": "P2.code", "label": "P2 · Second", "state": "pending"},
-            {"code": "P2.review", "label": "P2 · review", "state": "pending"},
-            {"code": "test", "label": "Test phase", "state": "pending"},
-            {"code": "docs", "label": "Doc phase", "state": "pending"},
-            {"code": "wrap-up", "label": "Wrap-up", "state": "pending"}]]
+            {"code": "P1.code", "label": "P1 · First", "state": "pending",
+             "kind": "code-writer"},
+            {"code": "P1.review", "label": "P1 · review", "state": "pending",
+             "kind": "review"},
+            {"code": "P2.code", "label": "P2 · Second", "state": "pending",
+             "kind": "code-writer"},
+            {"code": "P2.review", "label": "P2 · review", "state": "pending",
+             "kind": "review"},
+            {"code": "sweep", "label": "Gate sweep", "state": "pending",
+             "kind": "sweep"},
+            {"code": "consult", "label": "Completion consult",
+             "state": "pending", "kind": "consult"},
+            {"code": "test", "label": "Test phase", "state": "pending",
+             "kind": "test"},
+            {"code": "docs", "label": "Doc phase", "state": "pending",
+             "kind": "docs"},
+            {"code": "wrap-up", "label": "Wrap-up", "state": "pending",
+             "kind": "wrap-up"}]]
         # one step at a time: the gate is its code round's, the sweep its
         # own, the doc gate the wrap-up's
         assert seen == [
@@ -17524,6 +17545,21 @@ def test_a_phase_the_consult_appends_goes_in_before_the_test_phase():
         assert state["progress"][4]["label"] == "P2 · The gap"
 
 
+def test_a_phase_appended_before_the_check_goes_in_ahead_of_its_sweep():
+    """AIWF-199: the seeded sweep is the first pending step of no phase, so
+    a phase the plan gains while the phases run is listed before it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        script = [(*V["exec_done"], append_phase("2", "Found on the way")),
+                  V["review_signoff"], V["exec_done"], V["review_signoff"],
+                  *TAIL]
+        r = ScriptedLoop(slice_dir, script, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert [c for c, _ in progress_of(load_state(slice_dir))] == [
+            "P1.code", "P1.review", "P2.code", "P2.review", "sweep",
+            "consult", "test", "docs", "wrap-up"]
+
+
 def test_the_wrap_up_runs_on_through_the_doc_gate_and_ends_with_the_ladder():
     with tempfile.TemporaryDirectory() as tmp:
         slice_dir, repo = make_slice(tmp)
@@ -17543,9 +17579,13 @@ def test_the_wrap_up_runs_on_through_the_doc_gate_and_ends_with_the_ladder():
                                      V["consult_complete"], V["test_clean"]],
                          repo_root=repo)
         assert run_to_exit(r) == 0
+        progress = load_state(slice_dir)["progress"]
         assert progress_of(load_state(slice_dir)) == [
             ("P1.code", "done"), ("P1.review", "done"), ("sweep", "done"),
             ("consult", "done"), ("test", "done"), ("wrap-up", "done")]
+        # reached unrun, it has no time of its own; the steps that ran have
+        assert "duration" not in progress[-1]
+        assert all(isinstance(s["duration"], int) for s in progress[:-1])
 
 
 def test_a_resume_keeps_the_list_it_finds():
@@ -17617,6 +17657,8 @@ def test_a_resume_of_a_run_with_no_list_seeds_one_from_where_it_stands():
             ("P1.review", "P1 · review", "done"),
             ("P2.code", "P2 · Second", "pending"),
             ("P2.review", "P2 · review", "pending"),
+            ("sweep", "Gate sweep", "pending"),
+            ("consult", "Completion consult", "pending"),
             ("test", "Test phase", "pending"),
             ("docs", "Doc phase", "pending"),
             ("wrap-up", "Wrap-up", "pending")]
@@ -17643,10 +17685,395 @@ def test_a_resume_of_a_run_with_no_list_seeds_one_from_where_it_stands():
         r.on_start = lambda: seeded.append(load_state(slice_dir)["progress"])
         assert run_to_exit(r) == 0
         assert [(s["code"], s["state"]) for s in seeded[0]] == [
-            ("P1.code", "done"), ("P1.review", "done"), ("test", "done"),
-            ("docs", "done"), ("wrap-up", "active")]
+            ("P1.code", "done"), ("P1.review", "done"), ("sweep", "done"),
+            ("consult", "done"), ("test", "done"), ("docs", "done"),
+            ("wrap-up", "active")]
+        # seeded done, never run here: no time is theirs
+        assert all("duration" not in s for s in seeded[0])
         assert all(s["state"] == "done"
                    for s in load_state(slice_dir)["progress"])
+
+
+# -- a step's conversations, its whole duration and its gate mark --------------
+
+@contextlib.contextmanager
+def fake_clock(start=None):
+    """The driver's clock and the list's, standing still but where a test
+    moves it on (`clock[0] += ...`): a duration is then what the test made
+    it."""
+    clock = [start or datetime(2026, 11, 20, 9, 0).astimezone()]
+    with patched(run_loop, _now_iso=lambda: clock[0].isoformat()), \
+            patched(run_loop.pilot_progress, _now=lambda: clock[0]):
+        yield clock
+
+
+def advancing(clock, seconds, then=None):
+    """A script step's effect: the session took `seconds` of the clock."""
+    def effect(loop):
+        clock[0] += timedelta(seconds=seconds)
+        if then is not None:
+            then(loop)
+    return effect
+
+
+def step_on_disk(slice_dir, code):
+    return next(s for s in load_state(slice_dir)["progress"]
+                if s["code"] == code)
+
+
+def conversations_on_disk(slice_dir):
+    """Each step's conversations as `wait` would find them now."""
+    return {s["code"]: s["conversations"]
+            for s in load_state(slice_dir)["progress"]
+            if s.get("conversations")}
+
+
+def test_each_rounds_session_is_on_its_step_while_the_round_runs():
+    """AIWF-184/188: a round's session is on its step from the moment the
+    loop notes it, on disk for the next `wait` — the writer's, the gate's
+    test-fixer's in the code step, the reviewer's, the consult's, the test
+    phase's and the doc phase's."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        seen = []
+
+        def noting(loop):
+            seen.append(conversations_on_disk(loop.slice_dir))
+
+        script = [
+            ("code-writer", {"outcome": "done", "summary": "built"}, noting),
+            (*FIXER_ISSUES, noting),
+            ("code-writer", {"outcome": "done", "summary": "fixed"}, noting),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"},
+             noting),
+            ("consult", {"outcome": "complete", "summary": "done"}, noting),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}, noting),
+            ("doc-writer", {"outcome": "done", "summary": "ok"}, noting)]
+        r = SpawningLoop(slice_dir, script, repo_root=repo,
+                         gates=[False, True])
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        code = {"P1.code": ["sess-1"]}
+        fixed = {"P1.code": ["sess-1", "sess-2"]}
+        assert seen == [
+            code, fixed, fixed | {"P1.code-2": ["sess-3"]},
+            fixed | {"P1.code-2": ["sess-3"], "P1.review": ["sess-4"]},
+            fixed | {"P1.code-2": ["sess-3"], "P1.review": ["sess-4"],
+                     "consult": ["sess-5"]},
+            fixed | {"P1.code-2": ["sess-3"], "P1.review": ["sess-4"],
+                     "consult": ["sess-5"], "test": ["sess-6"]},
+            fixed | {"P1.code-2": ["sess-3"], "P1.review": ["sess-4"],
+                     "consult": ["sess-5"], "test": ["sess-6"],
+                     "docs": ["sess-7"]}]
+        # the sweep spawns no session of its own
+        assert "sweep" not in conversations_on_disk(slice_dir)
+
+
+def test_the_wrap_ups_session_is_on_its_step_while_it_runs():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(tmp)
+        plant_waiting(slice_dir)
+        seen = []
+        r = ScriptedLoop(slice_dir, wrap_script(repo), repo_root=repo,
+                         wrap_ups=[(WRAP_DONE, wrap_up_fixes(
+                             repo, then=lambda loop: seen.append(
+                                 conversations_on_disk(loop.slice_dir))))])
+        assert run_to_exit(r) == 0
+        assert seen == [{"wrap-up": ["sess-wrap-1"]}]
+        assert step_on_disk(slice_dir, "wrap-up")["conversations"] == [
+            "sess-wrap-1"]
+
+
+def test_a_usage_halts_sleep_is_no_time_of_the_step_it_falls_in():
+    """AIWF-198: the step's clock stands paused through the session-limit
+    sleep and runs again for the redispatch; its duration is the two
+    sessions' time alone."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        slice_dir, repo = make_slice(tmp)
+        script = [
+            ("code-writer", SESSION_LIMIT_TEXT, advancing(clock, 60)),
+            ("code-writer", {"outcome": "done", "summary": "built"},
+             advancing(clock, 300)),
+            ("code-reviewer", {"outcome": "signoff", "summary": "ok"},
+             advancing(clock, 30)),
+            ("consult", {"outcome": "complete", "summary": "done"}),
+            ("test-agent", {"outcome": "clean", "summary": "ok"}),
+            ("doc-writer", {"outcome": "done", "summary": "ok"})]
+        r = SpawningLoop(slice_dir, script, repo_root=repo)
+        paused = []
+
+        def sleep(seconds):
+            r.sleeps.append(seconds)
+            paused.append(step_on_disk(slice_dir, "P1.code").get("paused"))
+            clock[0] += timedelta(seconds=seconds)
+
+        r._sleep = sleep
+        with patched(run_loop, run_kc_session=r.run_kc_session):
+            assert run_to_exit(r) == 0
+        assert sum(r.sleeps) > 3600
+        assert set(paused) == {run_loop.USAGE_HALT}
+        progress = load_state(slice_dir)["progress"]
+        assert [(s["code"], s["duration"]) for s in progress[:2]] == [
+            ("P1.code", 360), ("P1.review", 30)]
+        assert not any("paused" in s for s in progress)
+
+
+def test_a_stop_banks_its_step_and_the_wait_on_the_operator_is_not_its_time():
+    """The exit banks the active step's clock; the days the run then stands
+    stopped are not the step's, and the resume counts on from what it ran."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        slice_dir, repo = make_slice(tmp, phases=[("1", "First")])
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], V["review_signoff"],
+            ("consult", {"outcome": "bail", "summary": "stop"},
+             advancing(clock, 100))], repo_root=repo)
+        assert run_to_exit(r) == 3
+        consult = step_on_disk(slice_dir, "consult")
+        assert consult["state"] == "active" and consult["spent"] == 100
+        assert "started" not in consult
+        clock[0] += timedelta(days=2)    # the operator answers
+        r = ScriptedLoop(slice_dir, list(TAIL), resume=True, repo_root=repo)
+        assert run_to_exit(r) == 0
+        assert step_on_disk(slice_dir, "consult")["duration"] == 100
+
+
+def test_a_killed_drivers_round_counts_whole_up_to_its_last_sign_of_life():
+    """No exit on record: the stretch the dead driver's step ran is banked
+    up to log.txt's last write, read before the resume writes a line, and so
+    is the gate it left running; a clean exit's banked time stands as it is
+    whatever the log says."""
+    t0 = datetime(2026, 11, 1, 9, 0).astimezone()
+    for killed in (True, False):
+        with tempfile.TemporaryDirectory() as tmp, \
+                fake_clock(t0 + timedelta(days=1)):
+            slice_dir, repo = make_slice(tmp)
+            state = resume_state(PROJECT, stage="gate")
+            step = {"code": "P1.code", "label": "P1 · First",
+                    "state": "active", "spent": 120, "kind": "code-writer"}
+            if killed:
+                step.update(started=t0.isoformat(),
+                            gate_started=(t0 + timedelta(seconds=500))
+                            .isoformat())
+            else:
+                state["exit"] = {"code": 4, "ts": t0.isoformat()}
+            state["progress"] = [
+                step, {"code": "P1.review", "label": "P1 · review",
+                       "state": "pending"}]
+            (slice_dir / "state.json").write_text(json.dumps(state))
+            log = slice_dir / "log.txt"
+            log.write_text("[09:10:00] [P1] the gate runs\n")
+            seen = (t0 + timedelta(seconds=600)).timestamp()
+            os.utime(log, (seen, seen))
+            r = ScriptedLoop(slice_dir, [V["review_signoff"], *TAIL],
+                             resume=True, repo_root=repo)
+            r.fake_git.branches.add("phase/074-P1")
+            assert run_to_exit(r) == 0
+            done = step_on_disk(slice_dir, "P1.code")
+            if killed:
+                assert done["duration"] == 120 + 600, done
+                assert done["gate_s"] == 100
+            else:
+                assert done["duration"] == 120, done
+            assert "gate_started" not in done
+
+
+def test_a_sweep_and_a_consult_the_run_goes_past_are_done_unrun():
+    """AIWF-199: a seeded sweep or consult the run never takes — here the
+    consult already answered on this plan, and the sweep's record still
+    describes the tree — is done with no time of its own, as an unrun
+    wrap-up is; the steps that ran have theirs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir, repo = make_slice(
+            tmp, phases=[("1", "First", PROJECT, True)])
+        state = resume_state(PROJECT)
+        state.update(
+            run_phase="consult", sweep_runs=1, consult_seq=1,
+            phases={"1": {"status": "merged", "stage": None,
+                          "executor_rounds": 1, "review_rounds": 1,
+                          "gate_runs": 1, "gate_fix_rounds": 0}},
+            consult_complete={"consult": 1, "phases": ["1"], "sweep": 1},
+            gate_sweep={"run": 1, "commits": {"repo": "h1"},
+                        "outcome": "green", "green": True, "ran_at": "t",
+                        "results": []},
+            progress=[
+                {"code": "P1.code", "label": "P1 · First", "state": "done"},
+                {"code": "P1.review", "label": "P1 · review",
+                 "state": "done"},
+                *[{"code": c, "label": c, "state": "pending"}
+                  for c in ("sweep", "consult", "test", "docs",
+                            "wrap-up")]])
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        r = ScriptedLoop(slice_dir, [V["test_clean"], V["doc_done"]],
+                         resume=True, repo_root=repo)
+        r._sweep_heads = lambda targets: {"repo": "h1"}
+        assert run_to_exit(r) == 0
+        assert [s[0] for s in r.spawned] == ["test-agent", "doc-writer"]
+        progress = load_state(slice_dir)["progress"]
+        assert progress_of(load_state(slice_dir)) == [
+            (c, "done") for c in ("P1.code", "P1.review", "sweep", "consult",
+                                  "test", "docs", "wrap-up")]
+        durations = {s["code"]: s.get("duration") for s in progress}
+        assert durations["sweep"] is None and durations["consult"] is None
+        assert all(isinstance(durations[c], int)
+                   for c in ("test", "docs", "wrap-up"))
+
+
+def test_a_code_round_long_in_its_gate_is_marked_from_the_gate_on_and_into_done():
+    """D3: a `wait` while the gate runs marks the round's step as soon as
+    the gate has run past the repo's `gate_mark_minutes`, and the mark is
+    kept on the step to its done publication. The review is not marked."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        slice_dir, repo = make_slice(
+            tmp, config=rc() + "[progress]\ngate_mark_minutes = 1\n")
+        r = ScriptedLoop(slice_dir, [V["exec_done"], V["review_signoff"],
+                                     *TAIL], repo_root=repo)
+        real = r._run_gate
+        published = []
+
+        def publish_now():
+            with pilot() as fake:
+                code, _, _ = wait(slice_dir)
+            assert code == run_loop.WAIT_RUNNING
+            step = next(s for s in fake.sent[0] if s["code"] == "P1.code")
+            published.append((step["state"], step["marked"]))
+
+        def gate(*args, **kwargs):
+            clock[0] += timedelta(seconds=30)
+            publish_now()                     # half a minute in
+            clock[0] += timedelta(seconds=60)
+            publish_now()                     # past the minute
+            return real(*args, **kwargs)
+
+        r._run_gate = gate
+        with patched(run_loop, gate_mark_minutes=lambda root=None: 1):
+            assert run_to_exit(r) == 0
+            with pilot() as fake:
+                wait(slice_dir)
+        assert published == [("active", False), ("active", True)]
+        done = step_on_disk(slice_dir, "P1.code")
+        assert (done["marked"], done["gate_s"], done["duration"]) == (
+            True, 90, 90)
+        [sent] = [s for s in fake.sent[-1] if s["code"] == "P1.code"]
+        assert (sent["state"], sent["marked"], sent["duration"]) == (
+            "done", True, 90)
+        assert not step_on_disk(slice_dir, "P1.review").get("marked")
+
+
+def test_a_rounds_gate_time_is_its_gates_its_re_gate_and_its_run_on_the_base():
+    """What counts toward the mark: the driver's own gate runs in the round
+    — the gate, the measurement's re-gate and its run on the merge base —
+    and not the test-fixer's session, which is the round's time all the
+    same."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        slice_dir, repo = make_slice(tmp)
+        r = ScriptedLoop(slice_dir, [
+            V["exec_done"], (*FIXER_ISSUES, advancing(clock, 100)),
+            V["exec_done"], V["review_signoff"], *TAIL],
+            gates=[False, True], repo_root=repo)
+        gate, base = r._run_gate, r._base_exec
+
+        def timed(real, seconds):
+            def run(*args, **kwargs):
+                clock[0] += timedelta(seconds=seconds)
+                return real(*args, **kwargs)
+            return run
+
+        r._run_gate, r._base_exec = timed(gate, 10), timed(base, 20)
+        assert run_to_exit(r) == 0
+        first = step_on_disk(slice_dir, "P1.code")
+        assert (first["gate_s"], first["duration"]) == (40, 140)
+        assert step_on_disk(slice_dir, "P1.code-2")["gate_s"] == 10
+
+
+def test_the_gate_mark_minutes_are_the_repos_and_forty_where_it_sets_none():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        assert run_loop.gate_mark_minutes(root) == 40
+        (root / ".aiworkflowrc").write_text("[progress]\ngate_mark_minutes = 7\n")
+        assert run_loop.gate_mark_minutes(root) == 7
+        # a broken file refuses no publication
+        (root / ".aiworkflowrc").write_text("[progress]\ngate_mark_minutes = 0\n")
+        assert run_loop.gate_mark_minutes(root) == 40
+        if shutil.which("git") is None:
+            return
+        (root / ".aiworkflowrc").write_text("[progress]\ngate_mark_minutes = 9\n")
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        (root / "sub").mkdir()
+        with contextlib.chdir(root / "sub"):
+            assert run_loop.gate_mark_minutes() == 9
+    with tempfile.TemporaryDirectory() as tmp, contextlib.chdir(tmp):
+        assert run_loop.gate_mark_minutes() == 40
+
+
+def launch(slice_dir, resume, driver_list, mode="ok"):
+    """`run --detach` with a driver that has seeded `driver_list` and
+    started on it by the time the launcher reads it: what the launcher
+    printed, and what reached Pilot."""
+    def detach(body, log_path):
+        state = _read_state(slice_dir)
+        state["progress"] = driver_list
+        (slice_dir / "state.json").write_text(json.dumps(state))
+        return 4242, 0, ""
+
+    out = io.StringIO()
+    args = type("Args", (), {
+        "slice_dir": str(slice_dir), "resume": resume, "verbose": False,
+        "dry_run": False, "detach": True, "step": None,
+        "spec_push": False})()
+    with pilot(mode) as fake, patched(run_loop, detach=detach), \
+            contextlib.redirect_stdout(out):
+        run_loop.cmd_run(args)
+    return out.getvalue(), fake.sent
+
+
+def _read_state(slice_dir):
+    path = slice_dir / "state.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def test_a_fresh_detached_run_lists_every_step_pending_before_its_first_wait():
+    """AIWF-200: the launcher sends the seeded list with every step pending
+    before it hands the run back, whatever the driver started meanwhile, so
+    each step stands listed ahead on Pilot's side; the first `wait` sends it
+    as it stands. A refused send never fails the launch."""
+    driver_list = [
+        {"code": "P1.code", "label": "P1 · First", "state": "active",
+         "kind": "code-writer", "started": "2026-11-20T09:00:00+01:00",
+         "conversations": ["sess-1"]},
+        {"code": "P1.review", "label": "P1 · review", "state": "pending",
+         "kind": "review"},
+        {"code": "sweep", "label": "Gate sweep", "state": "pending",
+         "kind": "sweep"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp)
+        out, sent = launch(slice_dir, False, driver_list)
+        assert out.splitlines()[-2].startswith("next: ")
+        assert sent == [[
+            {"code": "P1.code", "label": "P1 · First", "state": "pending",
+             "kind": "code-writer", "marked": False,
+             "conversations": ["sess-1"]},
+            {"code": "P1.review", "label": "P1 · review", "state": "pending",
+             "kind": "review", "marked": False, "conversations": []},
+            {"code": "sweep", "label": "Gate sweep", "state": "pending",
+             "kind": "sweep", "marked": False, "conversations": []}]]
+        with pilot() as fake, holding(slice_dir):
+            assert wait(slice_dir)[0] == run_loop.WAIT_RUNNING
+        assert [s["state"] for s in fake.sent[0]] == [
+            "active", "pending", "pending"]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp)
+        out, sent = launch(slice_dir, False, driver_list, mode="refused")
+        assert len(sent) == 1 and out.splitlines()[-2].startswith("next: ")
+        assert "[launch] Pilot progress not published: Pilot refused it" \
+            in (slice_dir / "log.txt").read_text()
+
+
+def test_a_resumed_detached_run_publishes_nothing_before_its_wait():
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = run_record(tmp, state=dict(RUNNING_STATE))
+        out, sent = launch(slice_dir, True, steps_of("P1.code",
+                                                     state="active"))
+        assert sent == [] and out.splitlines()[-2].startswith("next: ")
 
 
 def test_a_dry_run_writes_no_list():
@@ -19346,6 +19773,7 @@ def test_two_fixes_gated_green_are_landed_pushed_and_ruled_with_upstream_hashes(
         # Pilot's tile: the step, done, saying what came of it
         assert state["progress"][-1] == {
             "code": "fixes", "label": "Fixes · 2 landed", "state": "done",
+            "kind": "fixes", "conversations": ["sess-wrap-1"],
             "started": state["progress"][-1]["started"]}
         assert state["exit"]["pass"] == "fixes"
         code, out, _ = wait(w.slice_dir)
