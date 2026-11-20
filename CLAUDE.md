@@ -146,9 +146,7 @@ Four ideas span the files and explain most design choices:
    Detecting a green suite needs no model, only fixing red does.
 3. **Every agent is a headless `kc session`,** spawned through `run_loop.run_kc_session` (the plan
    loop calls it too). Opus at `xhigh` everywhere via explicit flags, except the always-Sonnet
-   agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions,
-   and the code-writer and code-reviewer while the operator has their Fable run on (Fable 5.2 at
-   `high`; their `MODELS` entries say which runs).
+   agents (`test-agent`, `test-fixer`, `rebase-agent`) which pin `model:` in their own definitions.
 4. **The loops bail, they don't chat:** exit 3 = error, exit 4 = operator question, exit 7 =
    halted at Pilot's halt file. An exit 4 leaves a document the stage registers with Pilot
    (`plugins/dev/docs/pilot.md`). `state.json`, `bailout.json` and the exit code are the entire
@@ -224,17 +222,12 @@ instead of reopening it.
 - **No Fable for any role** while Fable has its own quota: "once that goes away, I will start to
   consider it" (2026-09-09, the same read's S8). The refinement-writer, the one Fable role, moved
   to Opus at `xhigh` in 0.9.141 (2026-10-26, AIWF-112), and went with the refinement page in
-  0.10.9. **One exception, ruled 2026-11-11:** the code-writer runs Fable 5.2 at `high` (0.10.55)
-  over Fable's three limit resets, for the comparison material ("all of this is mostly my
-  personal research"). Since 2026-11-13 (0.10.60) the operator switches it off and on at their
-  word: a reset gives back up to half the week's quota by clearing the Fable usage alone, so
-  after one the normal quota has to be run out before Fable is used again. Off until they ask; the
-  toggle is the code-writer's `MODELS` entry in `run_loop.py`, its test's assertion, the
-  changelog and a release. **2026-11-18 (0.10.89):** the code-reviewer joined it, `MODELS` entry
-  and assertion beside the writer's, for the operator's last Fable run — the writer alone did not
-  use up the Fable budget. The larger build — a switch, Pilot's gold-bar line, the planning roles
-  on Fable — was dropped for its price
-  (`PilotAppSpecs/design/proposals/fable-work-and-the-limit-resets.md`).
+  0.10.9. **The one exception is over:** from 2026-11-11 (0.10.55) the code-writer ran Fable 5.2
+  at `high` over Fable's limit resets, for the comparison material ("all of this is mostly my
+  personal research"), switched off and on at the operator's word, the code-reviewer with it from
+  0.10.89. With the last reset spent, both went back to Opus at `xhigh` for good on 2026-11-20
+  (0.10.92). The larger build — a switch, Pilot's gold-bar line, the planning roles on Fable —
+  was dropped for its price (`PilotAppSpecs/design/proposals/fable-work-and-the-limit-resets.md`).
 - **No context compression, auto-compact windows, turn or token caps, or history summarisation**
   for writers and reviewers (`docs/research/turns-plan.md` § Deliberately not in this plan). The
   turns plan itself is exhausted (`docs/research/readout-2026-09-01.md` § 7).

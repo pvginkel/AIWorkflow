@@ -4,6 +4,16 @@ Notable changes to the `dev` slice-workflow plugin, newest first. Entries below 
 are retained as history — they document the template-era workflow this plugin supersedes (when the
 workflow was copy-and-fill templates rather than an installed plugin).
 
+## 2026-11-20 — The code-writer and the code-reviewer are back on Opus at `xhigh` for good (v0.10.92)
+
+The operator's Fable run is over: the last limit reset is spent and no more are expected.
+
+- **The code-writer and the code-reviewer run `("opus", "xhigh")`.** Those are their `MODELS`
+  entries in `run_loop.py`; every role now runs as `agent-dispatch.md` § Models says, and the
+  toggle's wording is gone from it, from `run_loop.py` and from `CLAUDE.md`. The next writer and
+  reviewer dispatched after this release run Opus, while a loop already running keeps the models
+  it imported. `slice_cost.py` keeps its Fable 5.2 price, for the transcripts of the run.
+
 ## 2026-11-20 — The published steps: kind, conversations, duration and mark, and the seed (v0.10.91)
 
 The workflow's half of the time a running work item still takes (PilotApp slice 049, in
