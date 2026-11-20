@@ -2964,7 +2964,12 @@ class FakePilot:
 
 
 def test_wait_publishes_the_plan_loops_steps_and_logs_to_plan_log():
-    steps = [{"code": "write", "label": "Plan · write", "state": "active"}]
+    """Each step goes with every field Pilot takes, its kind the plan's —
+    the plan's review `plan-review`, apart from the run's `review`."""
+    steps = [{"code": "write", "label": "Plan · write", "state": "active"},
+             {"code": "review", "label": "Plan · review", "state": "pending"}]
+    sent = [dict(steps[0], kind="plan-writer", marked=False, conversations=[]),
+            dict(steps[1], kind="plan-review", marked=False, conversations=[])]
     env = {k: v for k, v in os.environ.items()
            if k not in ("PILOT_TOKEN", "PILOT_MCP_URL")}
     with tempfile.TemporaryDirectory() as tmp:
@@ -2978,7 +2983,7 @@ def test_wait_publishes_the_plan_loops_steps_and_logs_to_plan_log():
                 patched(run_loop.pilot_progress, OPENER=fake):
             code, out, _ = wait(slice_dir)
         assert (code, out.splitlines()[0]) == (0, "ended: exit 4")
-        assert fake.sent == [steps, steps]
+        assert fake.sent == [sent, sent]
         assert not (slice_dir / "plan_log.txt").exists()
         with patched(os, environ=env):
             code, _, _ = wait(slice_dir)
@@ -3005,10 +3010,18 @@ def no_pilot_env(**extra):
     return dict(env, **extra)
 
 
-def grounding(state):
-    return [{"code": "ground", "label": "Plan · ground", "state": state},
-            {"code": "write", "label": "Plan · write", "state": "pending"},
-            {"code": "review", "label": "Plan · review", "state": "pending"}]
+def grounding(state, duration=None):
+    """The three steps `progress` sends, each with every field Pilot takes
+    and its kind in the plan; the grounding names no conversation."""
+    ground = {"code": "ground", "label": "Plan · ground", "state": state,
+              "kind": "plan-grounding"}
+    if duration is not None:
+        ground["duration"] = duration
+    return [dict(ground, marked=False, conversations=[]),
+            {"code": "write", "label": "Plan · write", "state": "pending",
+             "kind": "plan-writer", "marked": False, "conversations": []},
+            {"code": "review", "label": "Plan · review", "state": "pending",
+             "kind": "plan-review", "marked": False, "conversations": []}]
 
 
 def plan_log_lines(slice_dir):
@@ -3117,11 +3130,14 @@ def test_progress_is_a_subcommand_with_a_required_ground():
         assert main("progress", str(slice_dir), "--ground", "active") == (
             0, "", "")
         assert len(plan_log_lines(slice_dir)) == 1
-        for argv in ((str(slice_dir),), (str(slice_dir), "--ground", "pending"),
+        assert main("progress", str(slice_dir), "--ground", "pending") == (
+            0, "", "")
+        assert len(plan_log_lines(slice_dir)) == 2
+        for argv in ((str(slice_dir),), (str(slice_dir), "--ground", "begun"),
                      (str(slice_dir), "--ground")):
             code, out, _ = main("progress", *argv)
             assert (code, out) == (2, ""), argv
-        assert len(plan_log_lines(slice_dir)) == 1
+        assert len(plan_log_lines(slice_dir)) == 2
 
 
 
@@ -3744,6 +3760,309 @@ def test_a_fold_pass_and_a_pass_after_questions_are_their_kinds():
         assert kinds(slice_dir) == [("plan-writer", 1, "first"),
                                     ("plan-writer", 2, "first"),
                                     ("plan-reviewer", 1, None)]
+
+
+
+# -- the steps' kinds, sessions, durations and first lists (t24) ----------------
+#
+# The plan's steps carry the plan's kinds (D1), each pass's session from its
+# start with plan_state.json's in-flight record (AIWF-184, AIWF-188), a done
+# step's whole seconds (AIWF-198), and a launch publishes its list before it
+# hands back (AIWF-200).
+
+@contextlib.contextmanager
+def fake_clock(start=None):
+    """The loop's clock and the list's, standing still but where a test
+    moves it on (`clock[0] += ...`)."""
+    clock = [start or datetime(2026, 11, 20, 9, 0).astimezone()]
+    with patched(plan_loop, _now_iso=lambda: clock[0].isoformat()), \
+            patched(plan_loop.pilot_progress, _now=lambda: clock[0]):
+        yield clock
+
+
+def advancing(clock, seconds, then=None):
+    """A script step's effect: the session took `seconds` of the clock."""
+    def effect(loop):
+        clock[0] += timedelta(seconds=seconds)
+        if then is not None:
+            then(loop)
+    return effect
+
+
+def step_of(slice_dir, code):
+    return next(s for s in load_state(slice_dir)["progress"]
+                if s["code"] == code)
+
+
+def test_the_plan_loops_steps_carry_the_plans_kinds():
+    """D1: the grounding is `plan-grounding`, a writer pass `plan-writer`
+    and a review `plan-review`, never the run's `review` — seeded, started
+    and in a round past the first alike."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = ScriptedLoop(slice_dir, [W_DONE, R_GAPS, W_DONE])
+        seeded = []
+        loop.on_start = lambda: seeded.append(
+            [(s["code"], s["kind"]) for s in load_state(slice_dir)["progress"]])
+        assert run_to_exit(loop) == 0
+        assert seeded == [[("ground", "plan-grounding"),
+                           ("write", "plan-writer"), ("review", "plan-review")]]
+        assert [(s["code"], s["kind"]) for s in
+                load_state(slice_dir)["progress"]] == [
+            ("ground", "plan-grounding"), ("write", "plan-writer"),
+            ("review", "plan-review"), ("write-2", "plan-writer")]
+
+
+class NotingLoop(SessionLoop):
+    """SessionLoop whose sessions are noted as a real one's are, by
+    `on_session` while the turn runs, each its own id: what plan_state.json
+    held as each session started (`at_start`) and once it was noted
+    (`noted`)."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.at_start, self.noted = [], []
+
+    def session(self, prompt, cwd, timeout, agent=None, **kw):
+        sid = f"sess-{len(self.noted) + 1}"
+        self.at_start.append(load_state(self.slice_dir))
+        kw["on_session"](sid)
+        self.noted.append(load_state(self.slice_dir))
+        code, result = super().session(prompt, cwd, timeout, agent, **kw)
+        result.session_id = sid
+        return code, result
+
+
+def test_each_passs_session_is_on_its_step_and_in_flight_from_its_start():
+    """AIWF-184/188: a pass is in plan_state.json's `in_flight` from its
+    dispatch on, and its session, once noted, on its step and in that record
+    while it runs; its ruling drops the record and the step keeps it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        loop = NotingLoop(slice_dir, [W_DONE, R_GO])
+        assert run_sessions(loop) == 0
+        first, second = loop.at_start
+        assert first["in_flight"] == {
+            "role": "plan-writer", "round": 1,
+            "verdict_path": str(slice_dir / "plan_writer_result_r1.json"),
+            "session": None, "started_at": first["in_flight"]["started_at"],
+            "model": "opus", "effort": "xhigh", "kind": "first"}
+        assert second["in_flight"]["role"] == "plan-reviewer"
+        assert second["in_flight"]["kind"] is None
+        assert [state["in_flight"]["session"] for state in loop.noted] == [
+            "sess-1", "sess-2"]
+        assert [{s["code"]: s.get("conversations") for s in state["progress"]
+                 if s.get("conversations")} for state in loop.noted] == [
+            {"write": ["sess-1"]},
+            {"write": ["sess-1"], "review": ["sess-2"]}]
+        state = load_state(slice_dir)
+        assert state["in_flight"] is None
+        assert step_of(slice_dir, "ground").get("conversations") is None
+        assert [h["session"] for h in state["history"]] == ["sess-1", "sess-2"]
+    with tempfile.TemporaryDirectory() as tmp:
+        # a pass that times out takes its record with it
+        slice_dir = make_slice(tmp)
+        loop = NotingLoop(slice_dir, [("plan-writer", NO_ANSWER)])
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert run_sessions(loop) == 3
+        assert load_state(slice_dir)["in_flight"] is None
+        assert step_of(slice_dir, "write")["conversations"] == ["sess-1"]
+
+
+def test_a_passs_duration_is_its_own_time_and_the_wait_on_the_operator_is_not():
+    """AIWF-198: a step is done with the whole seconds its clock ran; the
+    exit banks the open stretch, so the days the loop then stands waiting on
+    the operator are no time of the step the next pass finishes."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        slice_dir = make_slice(tmp)
+        asked = ("plan-writer", W_Q[1],
+                 advancing(clock, 600, asks_questions(QUESTION)))
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            assert run_to_exit(ScriptedLoop(slice_dir, [asked])) == 4
+        write = step_of(slice_dir, "write")
+        assert (write["state"], write["spent"]) == ("active", 600)
+        assert "started" not in write
+        clock[0] += timedelta(days=2)       # the operator answers
+        assert run_to_exit(ScriptedLoop(slice_dir, [
+            ("plan-writer", W_DONE[1], advancing(clock, 300, write_phases)),
+            ("plan-reviewer", R_GO[1], advancing(clock, 100))])) == 0
+        durations = {s["code"]: s.get("duration")
+                     for s in load_state(slice_dir)["progress"]}
+        assert durations == {"ground": None, "write": 600, "write-2": 300,
+                             "review": 100}
+
+
+def test_a_killed_loops_step_counts_up_to_its_last_sign_of_life():
+    """No exit on record: the stretch the dead loop's step ran is banked up
+    to plan_log.txt's last write, read before the rerun writes a line."""
+    t0 = datetime(2026, 11, 1, 9, 0).astimezone()
+    with tempfile.TemporaryDirectory() as tmp, \
+            fake_clock(t0 + timedelta(days=1)):
+        slice_dir = make_slice(tmp)
+        (slice_dir / "plan_state.json").write_text(json.dumps({
+            "slice": slice_dir.name, "phase": "writing", "base": "main",
+            "writer_rounds": 1, "review_rounds": 0, "pending_review": None,
+            "pending_questions": None, "history": [],
+            "progress": [
+                {"code": "ground", "label": "Plan · ground", "state": "done"},
+                {"code": "write", "label": "Plan · write", "state": "active",
+                 "spent": 30, "started": t0.isoformat()},
+                {"code": "review", "label": "Plan · review",
+                 "state": "pending"}]}))
+        log = slice_dir / "plan_log.txt"
+        log.write_text("[09:06:40] [plan-writer r1] session starting\n")
+        seen = (t0 + timedelta(seconds=400)).timestamp()
+        os.utime(log, (seen, seen))
+        assert run_to_exit(ScriptedLoop(slice_dir, [W_DONE, R_GO])) == 0
+        assert step_of(slice_dir, "write")["duration"] == 30 + 400
+        assert step_of(slice_dir, "write-2")["duration"] == 0
+
+
+# -- the grounding's duration --------------------------------------------------
+
+def test_the_grounding_goes_pending_then_active_then_done_with_its_seconds():
+    """AIWF-200 and AIWF-198: `--ground pending` lists the grounding before
+    it starts; `active` notes its start in the slice's run records, never
+    in the slice folder; `done` sends the seconds from that start and
+    clears it."""
+    with tempfile.TemporaryDirectory() as tmp, fake_clock() as clock:
+        data, patch = records_in(tmp)
+        slice_dir = spec_slice(tmp)
+        before = sorted(p.name for p in slice_dir.iterdir())
+        held = run_loop.run_records_dir(slice_dir, data_dir=data) \
+            / plan_loop.GROUND_CLOCK
+        fake = FakePilot()
+        with patch, patched(os, environ=no_pilot_env(
+                PILOT_TOKEN="t", PILOT_MCP_URL=PILOT_URL)), \
+                patched(plan_loop.pilot_progress, OPENER=fake):
+            assert progress(slice_dir, "pending") == (0, "", "")
+            assert progress(slice_dir, "active") == (0, "", "")
+            assert json.loads(held.read_text()) == {
+                "started": clock[0].isoformat()}
+            clock[0] += timedelta(minutes=7, seconds=5)
+            assert progress(slice_dir, "done") == (0, "", "")
+            assert not held.exists()
+            # a done with no active before it: no start known, no duration
+            assert progress(slice_dir, "done") == (0, "", "")
+            # a pending clears a start an abandoned grounding left
+            assert progress(slice_dir, "active") == (0, "", "")
+            assert progress(slice_dir, "pending") == (0, "", "")
+            assert not held.exists()
+        assert fake.sent == [grounding("pending"), grounding("active"),
+                             grounding("done", duration=425),
+                             grounding("done"), grounding("active"),
+                             grounding("pending")]
+        assert sorted(p.name for p in slice_dir.iterdir()) == before
+    with tempfile.TemporaryDirectory() as tmp:
+        # no run records to keep the start in: done goes with no duration
+        slice_dir = spec_slice(tmp)
+        fake = FakePilot()
+        with patched(os, environ=no_pilot_env(PILOT_TOKEN="t",
+                                              PILOT_MCP_URL=PILOT_URL)), \
+                patched(plan_loop.pilot_progress, OPENER=fake):
+            progress(slice_dir, "active")
+            progress(slice_dir, "done")
+        assert fake.sent == [grounding("active"), grounding("done")]
+
+
+# -- a launch's first list -----------------------------------------------------
+
+def launch_plan(slice_dir, driver_list, mode="ok"):
+    """`run --detach` with a loop that has written `driver_list` and
+    started on it by the time the launcher reads the state: what the
+    launcher printed, and what reached Pilot."""
+    def detach(body, log_path):
+        path = slice_dir / "plan_state.json"
+        state = json.loads(path.read_text()) if path.exists() else {
+            "slice": slice_dir.name}
+        state["progress"] = driver_list
+        path.write_text(json.dumps(state))
+        return 4242, 0, ""
+
+    sent = []
+
+    def opener(request, timeout=None):
+        steps = json.loads(request.data)["params"]["arguments"]["steps"]
+        sent.append(steps)
+        if mode == "refused":
+            raise urllib.error.URLError("Connection refused")
+        return FakePilot()(request)
+
+    out = io.StringIO()
+    with patched(os, environ=no_pilot_env(PILOT_TOKEN="t",
+                                          PILOT_MCP_URL=PILOT_URL)), \
+            patched(plan_loop.pilot_progress, OPENER=opener), \
+            patched(run_loop, detach=detach), contextlib.redirect_stdout(out):
+        plan_loop.cmd_run(type("Args", (), {
+            "slice_dir": str(slice_dir), "verbose": False, "step": None,
+            "detach": True})())
+    return out.getvalue(), sent
+
+
+def test_a_fresh_plan_launch_lists_its_steps_pending_before_it_hands_back():
+    """AIWF-200: the launcher sends the loop's seeded list with every step
+    not done pending — the grounding stays done — whatever the loop started
+    meanwhile, before its `next:` line; a refused send never fails it."""
+    begun = [
+        {"code": "ground", "label": "Plan · ground", "state": "done",
+         "kind": "plan-grounding"},
+        {"code": "write", "label": "Plan · write", "state": "active",
+         "kind": "plan-writer", "started": "2026-11-20T09:00:00+01:00",
+         "conversations": ["sess-1"]},
+        {"code": "review", "label": "Plan · review", "state": "pending",
+         "kind": "plan-review"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        out, sent = launch_plan(slice_dir, begun)
+        assert out.splitlines()[-2].startswith("next: ")
+        assert sent == [[
+            {"code": "ground", "label": "Plan · ground", "state": "done",
+             "kind": "plan-grounding", "marked": False, "conversations": []},
+            {"code": "write", "label": "Plan · write", "state": "pending",
+             "kind": "plan-writer", "marked": False,
+             "conversations": ["sess-1"]},
+            {"code": "review", "label": "Plan · review", "state": "pending",
+             "kind": "plan-review", "marked": False, "conversations": []}]]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        out, sent = launch_plan(slice_dir, begun, mode="refused")
+        assert len(sent) == 1 and out.splitlines()[-2].startswith("next: ")
+        assert "[launch] Pilot progress not published: no answer" in (
+            slice_dir / "plan_log.txt").read_text()
+
+
+def test_a_plan_reruns_launch_lists_its_steps_as_they_stood_before_it():
+    """A rerun's launcher sends the list plan_state.json held before the
+    loop was spawned: done steps done, the step the stop left active still
+    active, the rest pending — not what the loop has moved on to since."""
+    stood = [
+        {"code": "ground", "label": "Plan · ground", "state": "done",
+         "kind": "plan-grounding"},
+        {"code": "write", "label": "Plan · write", "state": "done",
+         "kind": "plan-writer", "duration": 900, "spent": 900},
+        {"code": "review", "label": "Plan · review", "state": "active",
+         "kind": "plan-review", "spent": 200, "conversations": ["sess-2"]}]
+    with tempfile.TemporaryDirectory() as tmp:
+        slice_dir = make_slice(tmp)
+        (slice_dir / "plan_state.json").write_text(json.dumps({
+            "slice": slice_dir.name, "phase": "adjudicating",
+            "progress": stood, "exit": {"code": 4, "ts": "t"}}))
+        moved = [dict(stood[0]), dict(stood[1]),
+                 dict(stood[2], state="done", duration=200),
+                 {"code": "write-2", "label": "Plan · write 2",
+                  "state": "active", "kind": "plan-writer"}]
+        out, sent = launch_plan(slice_dir, moved)
+        assert out.splitlines()[-2].startswith("next: ")
+        assert sent == [[
+            {"code": "ground", "label": "Plan · ground", "state": "done",
+             "kind": "plan-grounding", "marked": False, "conversations": []},
+            {"code": "write", "label": "Plan · write", "state": "done",
+             "kind": "plan-writer", "duration": 900, "marked": False,
+             "conversations": []},
+            {"code": "review", "label": "Plan · review", "state": "active",
+             "kind": "plan-review", "marked": False,
+             "conversations": ["sess-2"]}]]
 
 
 if __name__ == "__main__":

@@ -65,10 +65,13 @@ verdict; -v/--verbose echoes the full log there too.
 does, and `wait` is what the stage's session waits on inside its turn: a
 foreground call under the Bash tool's cap that answers with a
 signal, never a report (docs/pilot.md § A turn's end is the run's end).
-`wait` publishes the loop's steps to Pilot; `progress` is the stage
-session's own publish of them before the loop exists — the grounding active
-while the plan-preparer works, then done — so Pilot's tile shows the
-planning's steps from its start. It touches no state file and no lock.
+`wait` publishes the loop's steps to Pilot, and the launch its first list
+before it hands back (`publish_launch`); `progress` is the stage session's
+own publish of them before the loop exists — the grounding pending, then
+active while the plan-preparer works, then done with the seconds from its
+`active` — so Pilot's tile shows the planning's steps from its start. It
+touches no state file and no lock: the grounding's start waits in the
+slice's run records (`GROUND_CLOCK`).
 
 Pilot's halt file (run_loop.HALT_FILE) is looked for before every pass:
 present, the loop exits 7 with plan_state.json current, and the rerun once
@@ -87,7 +90,7 @@ the end takes one more writer pass, unreviewed, as the fix pass is.
 Usage:
     plan_loop.py run <slice-dir> [--step ID] [--spec-push] [--detach] [--verbose]
     plan_loop.py wait <slice-dir> [--for SECONDS]
-    plan_loop.py progress <slice-dir> --ground active|done
+    plan_loop.py progress <slice-dir> --ground pending|active|done
     plan_loop.py stop <slice-dir>
     plan_loop.py status <slice-dir>
 
@@ -102,6 +105,7 @@ the wait · 2 the loop is on another host.
 """
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -109,6 +113,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -195,6 +200,13 @@ VERDICTS = {
 # from the second on with its number after it.
 STEP_LABELS = {"ground": "Plan · ground", "write": "Plan · write",
                "review": "Plan · review"}
+
+# Where the grounding's start waits between the session's `progress --ground
+# active` and its `--ground done`, which times the step from it: a file of
+# the slice's run records (run_loop.run_records_dir), outside the spec repo,
+# so the wait dirties no slice folder. `debrief.py ground --start` notes the
+# preparer's own start, but its `--end` takes it off before `--ground done`.
+GROUND_CLOCK = "grounding.json"
 
 # The why of the writer's pass after the operator answered its questions,
 # the loop's own words; a pass after a review takes the review's findings'
@@ -728,8 +740,15 @@ class PlanLoop:
         state, and nothing here may mask the exit."""
         if not self._owns_state:
             return
-        self.state["exit"] = {"code": code, "ts": _now_iso(),
-                              **self._exit_facts}
+        at = _now_iso()
+        # The time the loop then stands stopped — a wait on the operator's
+        # answers above all — is no time of the step it stopped in: its open
+        # stretch is banked here, and the pass after it finishes it from that.
+        with contextlib.suppress(Exception):
+            if isinstance(self.state.get("progress"), list):
+                self.state["progress"] = pilot_progress.bank(
+                    self.state["progress"], at)
+        self.state["exit"] = {"code": code, "ts": at, **self._exit_facts}
         try:
             self._save_state()
         except OSError as e:
@@ -789,8 +808,31 @@ class PlanLoop:
             why = None
         self._progress(
             lambda steps: pilot_progress.start(steps, code, label, started,
-                                               why))
+                                               why, loop=pilot_progress.PLAN))
         self._save_state()
+
+    def _add_conversation(self, sid: str) -> bool:
+        """Session `sid` among the active step's conversations — the pass's,
+        from the moment its session is noted (AIWF-188). Whether the list
+        changed; the caller saves the state, so the next `wait` publishes
+        it."""
+        steps = self.state.get("progress")
+        if not isinstance(steps, list):
+            return False
+        edited = pilot_progress.add_conversation(steps, None, sid)
+        if edited == steps:
+            return False
+        self.state["progress"] = edited
+        return True
+
+    def _log_last_written(self) -> str | None:
+        """When plan_log.txt was last written, as ISO text — None with no
+        log."""
+        try:
+            mtime = self.log_path.stat().st_mtime
+        except OSError:
+            return None
+        return datetime.fromtimestamp(mtime).astimezone().isoformat()
 
     def _why_next(self, why: str) -> None:
         """`why` as the line the next pass opens with — what ended this one
@@ -802,24 +844,25 @@ class PlanLoop:
             self._save_state()
 
     def _seed_progress(self) -> list[dict]:
-        """The loop's steps as far as they are known: the grounding first,
-        always and done — the stage's session grounded the slice before it
-        launched the loop (`progress`) — then the writer's pass unless the
-        loop enters at review with no pass behind it (a reset re-plan), then
-        the review. A state from an older plugin has its first passes done
-        where its counts say they ran."""
-        state = self.state
+        """The loop's steps as far as they are known, each with its kind in
+        the plan (pilot_progress.PLAN): the grounding first, always and done
+        — the stage's session grounded the slice before it launched the loop
+        (`progress`) — then the writer's pass unless the loop enters at
+        review with no pass behind it (a reset re-plan), then the review. A
+        state from an older plugin has its first passes done where its
+        counts say they ran."""
+        state, plan = self.state, pilot_progress.PLAN
         steps = [pilot_progress.make_step("ground", STEP_LABELS["ground"],
-                                          pilot_progress.DONE)]
+                                          pilot_progress.DONE, loop=plan)]
         if not (state["phase"] == "reviewing" and not state["writer_rounds"]):
             steps.append(pilot_progress.make_step(
                 "write", STEP_LABELS["write"],
                 pilot_progress.DONE if state["writer_rounds"] >= 1
-                else pilot_progress.PENDING))
+                else pilot_progress.PENDING, loop=plan))
         steps.append(pilot_progress.make_step(
             "review", STEP_LABELS["review"],
             pilot_progress.DONE if state["review_rounds"] >= 1
-            else pilot_progress.PENDING))
+            else pilot_progress.PENDING, loop=plan))
         return steps
 
     def _emit(self, line: str) -> None:
@@ -1082,15 +1125,38 @@ class PlanLoop:
 
     def _spawn_session(self, role: str, prompt: str, verdict_path: Path,
                        round_: int, kind: str | None = None) -> dict:
-        """`_spawn`'s session and its ruling."""
+        """`_spawn`'s session and its ruling, under plan_state.json's
+        `in_flight` from the dispatch's first seconds to its ruling: the
+        pass's role, round, verdict file, when it began, what it runs on and
+        its kind, and its session once the loop learns it (AIWF-188) — as
+        the run loop's `in_flight`, for a reader of the state while the pass
+        runs; never reattached, so it goes with the pass however it ends."""
+        try:
+            return self._spawn_ruled(role, prompt, verdict_path, round_, kind)
+        finally:
+            if self.state.get("in_flight") is not None:
+                self.state["in_flight"] = None
+                self._save_state()
+
+    def _spawn_ruled(self, role: str, prompt: str, verdict_path: Path,
+                     round_: int, kind: str | None = None) -> dict:
         label = f"[{role} r{round_}]"
         model, effort = MODELS[role]
         dispatch = {"started_at": None, "model": model, "effort": effort,
                     "kind": kind}
 
         def _note_session(sid: str) -> None:
+            # The pass's session on its step and in the in-flight record
+            # from the round's start, saved for the next `wait`.
             self.log(f"{label} session {sid} — transcript "
                      f"{_transcript_path(self.repo_root, sid)}")
+            changed = self._add_conversation(sid)
+            in_flight = self.state.get("in_flight")
+            if in_flight is not None and in_flight.get("session") != sid:
+                in_flight["session"] = sid
+                changed = True
+            if changed:
+                self._save_state()
 
         t0 = time.monotonic()
         try:
@@ -1099,6 +1165,11 @@ class PlanLoop:
             self.log(f"{label} session starting")
             verdict_path.unlink(missing_ok=True)
             dispatch["started_at"] = _now_iso()
+            self.state["in_flight"] = {
+                "role": role, "round": round_,
+                "verdict_path": str(verdict_path), "session": None,
+                **dispatch}
+            self._save_state()
             returncode, result = run_kc_session(
                 prompt=prompt, cwd=str(self.repo_root),
                 timeout=TIMEOUTS[role], agent=role, model=model,
@@ -1154,6 +1225,9 @@ class PlanLoop:
 
         outcome = verdict["outcome"]
         self.log(f"{label} → {outcome}: {verdict.get('summary', '')[:160]}")
+        # The row names the session from here on; the same save drops the
+        # in-flight record.
+        self.state["in_flight"] = None
         self._record(role, round_, outcome, verdict.get("summary", ""),
                      session_id, duration_s, dispatch=dispatch)
         return verdict
@@ -1591,7 +1665,13 @@ class PlanLoop:
         return bool(phases) and not errors
 
     def _init_state(self) -> None:
+        # The old loop's last sign of life, before this one writes a line.
+        last_seen = self._log_last_written()
         self.state = _read_json(self.state_path) or {}
+        if self.state and self.state.get("exit") is None \
+                and isinstance(self.state.get("progress"), list):
+            self.state["progress"] = self._bank_killed(self.state["progress"],
+                                                       last_seen)
         if not self.state:
             self.state = {
                 "slice": self.slice_name,
@@ -1619,6 +1699,22 @@ class PlanLoop:
             self.state["step"] = self.step
         self._owns_state = True
         self._save_state()
+
+    @staticmethod
+    def _bank_killed(steps: list[dict], last_seen: str | None) -> list[dict]:
+        """A rerun's list where the loop before it was killed, no exit on
+        record: the open stretch its step's clock was left with banked up to
+        `last_seen`, that loop's last sign of life, so the time it stood dead
+        is not the step's; dropped with no log to tell it. A clean exit
+        banked it already. The step stays active, its clock stopped: the
+        rerun's next pass finishes it, as after any exit."""
+        if last_seen is not None:
+            return pilot_progress.bank(steps, last_seen)
+        for step in [s for s in steps if isinstance(s, dict)
+                     and s.get("state") == pilot_progress.ACTIVE
+                     and not s.get("paused") and s.get("started")]:
+            steps = pilot_progress.bank(steps, step["started"], step["code"])
+        return steps
 
     def _ensure_report(self) -> None:
         """The slice's close-out report exists before the first dispatch —
@@ -1928,7 +2024,8 @@ class PlanLoop:
                   "— rerun once it is gone.", file=sys.stderr)
             sys.exit(EXIT_HALTED)
 
-        self._progress(pilot_progress.finish_active)
+        at = _now_iso()
+        self._progress(lambda steps: pilot_progress.finish_active(steps, at))
         self.log(f"plan complete: {self.state['writer_rounds']} writer "
                  f"pass(es), review on file")
         self.announce(f"plan complete: {self.state['writer_rounds']} writer "
@@ -1950,9 +2047,47 @@ def cmd_run(args) -> None:
                     spec_push=bool(getattr(args, "spec_push", False)))
     print(f"plan loop log: {loop.log_path}", flush=True)
     if getattr(args, "detach", False):
-        run_loop.run_detached(loop, slice_dir, script=SCRIPT)
+        # Read before the loop is spawned: a rerun's list as it stood.
+        before = _read_json(loop.state_path)
+        run_loop.run_detached(
+            loop, slice_dir, script=SCRIPT,
+            first=lambda: publish_launch(loop.state_path, loop.log_path,
+                                         before))
         return
     loop.run()
+
+
+def launch_steps(before, after) -> list[dict] | None:
+    """The list a launch publishes before it hands back (AIWF-200), so that
+    a step the loop starts after it stood on the work item's first list:
+    a rerun's, from `before`, the state read before the loop was spawned,
+    as it stood then — done steps done, a step left active by the stop
+    still active, the rest pending; a fresh launch's, from `after`, the
+    state the loop seeded, every step not done pending
+    (pilot_progress.pending_first), whatever the loop has started since —
+    the grounding, done before the loop, stays done. None with no list."""
+    held = before.get("progress") if isinstance(before, dict) else None
+    if isinstance(held, list) and held:
+        return [dict(s) for s in held if isinstance(s, dict)]
+    seeded = after.get("progress") if isinstance(after, dict) else None
+    if not isinstance(seeded, list) or not seeded:
+        return None
+    return [dict(s) if s.get("state") == pilot_progress.DONE
+            else pilot_progress.pending_first([s])[0]
+            for s in seeded if isinstance(s, dict)]
+
+
+def publish_launch(state_path: Path, log_path: Path, before) -> None:
+    """A launch's first publication (`launch_steps`), from the launcher — a
+    process of the session's own, with its live Pilot credentials — once
+    the loop has started and before the lines hand it back. Best-effort as
+    every publication is: no list sends nothing, a send that fails is a
+    `[launch]` line in plan_log.txt, and nothing fails the launch."""
+    steps = launch_steps(before, _read_json(state_path))
+    if steps:
+        pilot_progress.publish_steps(
+            steps, lambda text: _append_wait_line(log_path, text, "launch"),
+            loop=pilot_progress.PLAN)
 
 
 def _ended_lines(record: dict, slice_dir: Path) -> list[str]:
@@ -1985,26 +2120,68 @@ def cmd_wait(args) -> None:
                    _ended_lines)
 
 
+def ground_clock(slice_dir: Path, state: str, log_line,
+                 now: str | None = None) -> int | None:
+    """The grounding's clock, kept in the slice's run records
+    (GROUND_CLOCK) between the session's `progress` calls: `pending` clears
+    a start an earlier grounding left, `active` notes its start, `done`
+    answers the whole seconds from that start and clears it. None for a
+    `done` with no start known — no `active` before it, or no run records
+    to keep one — and for the other two. Bookkeeping: a file that cannot
+    be read or written is no start, and a write that fails is one line
+    through `log_line`."""
+    folder = run_records_dir(slice_dir)
+    if folder is None:
+        return None
+    path = folder / GROUND_CLOCK
+    now = now or _now_iso()
+    if state == pilot_progress.ACTIVE:
+        RunRecords(folder, log_line).write(GROUND_CLOCK, {"started": now})
+        return None
+    held = _read_json(path) if state == pilot_progress.DONE else None
+    with contextlib.suppress(OSError):
+        path.unlink(missing_ok=True)
+    started = held.get("started") if isinstance(held, dict) else None
+    try:
+        seconds = (datetime.fromisoformat(now)
+                   - datetime.fromisoformat(started)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return min(max(int(seconds), 0), pilot_progress.DURATION_MAX)
+
+
 def cmd_progress(args) -> None:
     """The plan-slice session's publish of the grounding steps, before the
-    loop exists: the grounding in the state `--ground` gives, the writer's
-    pass and the review pending, sent to Pilot from this process's own
-    environment (pilot_progress.publish_steps). It reads and writes no
-    plan_state.json and takes no lock; what could not be published goes to
-    plan_log.txt, nothing to stdout, and it exits 0 whatever Pilot
-    answered."""
+    loop exists: the grounding in the state `--ground` gives — pending
+    first, in a call of its own, so it stands listed before it starts —
+    the writer's pass and the review pending, each with its kind in the
+    plan, sent to Pilot from this process's own environment
+    (pilot_progress.publish_steps). `--ground done` carries the grounding's
+    duration from its `active` call (`ground_clock`), and none where no
+    start is known. The grounding names no conversation: the preparer runs
+    in the stage's own session. It reads and writes no plan_state.json and
+    takes no lock; what could not be published goes to plan_log.txt,
+    nothing to stdout, and it exits 0 whatever Pilot answered."""
     slice_dir = Path(args.slice_dir)
     if not slice_dir.is_dir():
         print(f"Error: slice directory not found: {slice_dir}", file=sys.stderr)
         sys.exit(2)
-    steps = [
-        pilot_progress.make_step("ground", STEP_LABELS["ground"], args.ground),
-        pilot_progress.make_step("write", STEP_LABELS["write"]),
-        pilot_progress.make_step("review", STEP_LABELS["review"]),
-    ]
     log_path = slice_dir / "plan_log.txt"
-    pilot_progress.publish_steps(
-        steps, lambda text: _append_wait_line(log_path, text, "progress"))
+
+    def log_line(text: str) -> None:
+        _append_wait_line(log_path, text, "progress")
+
+    plan = pilot_progress.PLAN
+    ground = pilot_progress.make_step("ground", STEP_LABELS["ground"],
+                                      args.ground, loop=plan)
+    duration = ground_clock(slice_dir, args.ground, log_line)
+    if duration is not None:
+        ground["duration"] = duration
+    steps = [ground,
+             pilot_progress.make_step("write", STEP_LABELS["write"], loop=plan),
+             pilot_progress.make_step("review", STEP_LABELS["review"],
+                                      loop=plan)]
+    pilot_progress.publish_steps(steps, log_line, loop=plan)
     sys.exit(0)
 
 
@@ -2080,9 +2257,11 @@ def main() -> None:
                          "whatever Pilot answered")
     progress_p.add_argument("slice_dir")
     progress_p.add_argument("--ground", required=True,
-                            choices=(pilot_progress.ACTIVE, pilot_progress.DONE),
-                            help="the grounding's state: active while the "
-                                 "plan-preparer works, done once it returned")
+                            choices=pilot_progress.STATES,
+                            help="the grounding's state: pending before it "
+                                 "starts, active while the plan-preparer "
+                                 "works, done once it returned, with the "
+                                 "seconds from its active")
     progress_p.set_defaults(func=cmd_progress)
 
     stop_p = sub.add_parser("stop", help="interrupt the slice's plan loop "
