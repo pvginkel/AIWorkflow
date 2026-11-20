@@ -175,7 +175,8 @@ def test_the_request_is_one_tools_call_of_set_progress():
     assert request.get_header("Content-type") == "application/json"
     assert json.loads(request.data) == {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-        "params": {"name": "set_progress", "arguments": {"steps": STEPS}}}
+        "params": {"name": "set_progress",
+                   "arguments": {"steps": on_wire(STEPS)}}}
     assert timeout == pp.TIMEOUT == 3
 
 
@@ -289,13 +290,13 @@ def test_the_list_is_held_to_pilots_limits_before_it_is_sent():
         "not a step",
         {"label": "no code at all"},
     ]
-    assert pp.sanitize(steps) == [
+    assert pp.sanitize(steps) == on_wire([
         {"code": "x" * 64, "label": "code at the limit", "state": "done"},
         {"code": "P1.code", "label": "P1.code", "state": "done"},
         {"code": "P1.review", "label": "y" * 119 + "…", "state": "active"},
         {"code": "test", "label": "Test phase"},
         {"code": "docs", "label": "z" * 120},
-    ]
+    ])
     many = [{"code": f"s{i}", "label": f"step {i}", "state": "done"}
             for i in range(101)]
     kept = pp.sanitize(many)
@@ -315,11 +316,11 @@ def test_a_why_is_sent_only_when_asked_and_held_to_pilots_limits():
         {"code": "d", "label": "D", "why": 5},
         {"code": "e", "label": "E", "state": "pending"},
     ]
-    bare = [{"code": "a", "label": "A", "state": "done"},
-            {"code": "b", "label": "B", "state": "done"},
-            {"code": "c", "label": "C", "state": "active"},
-            {"code": "d", "label": "D"},
-            {"code": "e", "label": "E", "state": "pending"}]
+    bare = on_wire([{"code": "a", "label": "A", "state": "done"},
+                    {"code": "b", "label": "B", "state": "done"},
+                    {"code": "c", "label": "C", "state": "active"},
+                    {"code": "d", "label": "D"},
+                    {"code": "e", "label": "E", "state": "pending"}])
     assert pp.sanitize(steps) == bare
     with_whys = pp.sanitize(steps, why=True)
     assert [s.get("why") for s in with_whys] == [
@@ -454,6 +455,30 @@ def test_discover_says_why_where_no_list_came():
 
 # -- the list -----------------------------------------------------------------
 
+# The kinds as Pilot's estimate takes them (D1), written out here so that a
+# change to the module's map shows as a failure.
+RUN_KINDS = {"code": "code-writer", "review": "review", "sweep": "sweep",
+             "consult": "consult", "test": "test", "docs": "docs",
+             "wrap-up": "wrap-up", "fixes": "fixes", "close-out": "close-out"}
+PLAN_KINDS = {"ground": "plan-grounding", "write": "plan-writer",
+              "review": "plan-review"}
+
+
+def on_wire(steps, loop="run", **fields):
+    """`steps` as `sanitize` sends them with nothing more to say: each with
+    its kind from the map, unmarked, naming no conversation — `fields` over
+    every step."""
+    kinds = RUN_KINDS if loop == "run" else PLAN_KINDS
+    out = []
+    for s in steps:
+        step = dict(s, marked=False, conversations=[])
+        kind = kinds.get(pp.split_code(s["code"])[1])
+        if kind is not None:
+            step["kind"] = kind
+        out.append(dict(step, **fields))
+    return out
+
+
 def test_a_code_names_its_phase_kind_and_round():
     code = pp.step_code
     assert [code("code", 1, "3"), code("code", 2, "3"), code("review", 1, "3a"),
@@ -495,7 +520,7 @@ def seeded():
 def test_start_makes_one_step_active_in_the_order_taken():
     base = seeded()
     assert base[0] == {"code": "P1.code", "label": "P1 · First",
-                       "state": "pending"}
+                       "state": "pending", "kind": "code-writer"}
     steps = pp.start(base, "P1.code", "P1 · First")
     steps = pp.start(steps, "P1.code-2", "P1 · code 2")
     assert codes(steps)[:3] == [("P1.code", "done"), ("P1.code-2", "active"),
@@ -514,7 +539,8 @@ def test_start_makes_one_step_active_in_the_order_taken():
     done = pp.finish_phase(pp.finish_phase(steps, "1"), "2")
     done = pp.finish_step(pp.finish_step(done, "test"), "wrap-up")
     assert pp.start(done, "sweep", "Gate sweep")[-1] == {
-        "code": "sweep", "label": "Gate sweep", "state": "active"}
+        "code": "sweep", "label": "Gate sweep", "state": "active",
+        "kind": "sweep"}
     # the edits leave the list they were given as it was
     assert base == seeded()
 
@@ -525,21 +551,24 @@ T0, T1 = "2026-11-04T09:00:00+01:00", "2026-11-04T09:30:00+01:00"
 def test_a_started_step_carries_its_time_and_a_resume_restarts_it():
     steps = pp.start(seeded(), "P1.code", "P1 · First", T0)
     assert steps[0] == {"code": "P1.code", "label": "P1 · First",
-                        "state": "active", "started": T0}
-    # a new step, and a step started again, take the time given
+                        "state": "active", "kind": "code-writer",
+                        "started": T0}
+    # a new step, and a step started again, take the time given; the one
+    # the new step finished stops its clock at it
     steps = pp.start(steps, "P1.code-2", "P1 · code 2", T1)
     assert steps[1]["started"] == T1 and steps[0]["started"] == T0
+    assert (steps[0]["spent"], steps[0]["duration"]) == (1800, 1800)
     assert pp.start(steps, "P1.code-2", "P1 · code 2", T0)[1]["started"] == T0
     # no time given, none recorded and none dropped
     assert "started" not in pp.start(seeded(), "P1.code", "P1 · First")[0]
     assert pp.start(steps, "P1.code-2", "P1 · code 2")[1]["started"] == T1
-    # the resume: the active step alone, an older one with none included
+    # the resume: the active step alone, a done one and a pending one not
     restarted = pp.restart_clock(steps, "later")
     assert [s.get("started") for s in restarted[:3]] == [T0, "later", None]
     assert pp.restart_clock(seeded(), "later") == seeded()
     # Pilot never sees it
-    assert pp.sanitize(steps)[1] == {"code": "P1.code-2",
-                                     "label": "P1 · code 2", "state": "active"}
+    assert pp.sanitize(steps)[1] == on_wire([
+        {"code": "P1.code-2", "label": "P1 · code 2", "state": "active"}])[0]
 
 
 def test_a_why_is_one_line_held_to_pilots_limit():
@@ -554,13 +583,14 @@ def test_a_why_is_one_line_held_to_pilots_limit():
 def test_a_step_carries_its_why_and_a_restart_without_one_keeps_it():
     assert pp.make_step("P1.code-2", "P1 · code 2", why=" The gate\nwent red ") \
         == {"code": "P1.code-2", "label": "P1 · code 2", "state": "pending",
-            "why": "The gate went red"}
+            "why": "The gate went red", "kind": "code-writer"}
     assert pp.make_step("P1.code", "P1 · First", why=" ") == \
         pp.make_step("P1.code", "P1 · First")
     steps = pp.start(seeded(), "P1.code", "P1 · First")
     steps = pp.start(steps, "P1.code-2", "P1 · code 2", T0, why=WHY)
     assert steps[1] == {"code": "P1.code-2", "label": "P1 · code 2",
-                        "state": "active", "started": T0, "why": WHY}
+                        "state": "active", "started": T0, "why": WHY,
+                        "kind": "code-writer"}
     # started again: without a why it keeps its own, with one it takes it
     assert pp.start(steps, "P1.code-2", "P1 · code 2", T1)[1]["why"] == WHY
     assert pp.start(steps, "P1.code-2", "P1 · code 2",
@@ -657,7 +687,7 @@ def test_a_phase_goes_in_before_the_first_later_or_closing_pending_step():
     assert [c for c, _ in codes(out)][:4] == [
         "P1.code", "P1.review", "P1a.code", "P1a.review"]
     assert out[2] == {"code": "P1a.code", "label": "P1a · Between",
-                      "state": "pending"}
+                      "state": "pending", "kind": "code-writer"}
     # a phase stamped done goes in done; with nothing pending, at the end
     finished = [dict(s, state="done") for s in steps]
     out = pp.insert_phase(finished, "3", "Third", order, done=True)
@@ -693,7 +723,8 @@ def test_the_publisher_sends_a_changed_list_and_a_forced_one():
                             "state": "pending"}]
         state_file(tmp, changed)
         assert pub.publish().kind == pp.OK
-        assert opener.sent() == [STEPS, STEPS, changed]
+        assert opener.sent() == [on_wire(STEPS), on_wire(STEPS),
+                                 on_wire(changed)]
         assert lines == []
 
 
@@ -898,9 +929,11 @@ def test_publish_steps_sends_the_list_given_as_pilot_takes_it():
     lines = []
     opener = FakeOpener(lambda: ok_stream(GROUNDING))
     answer = pp.publish_steps(GROUNDING, lines.append, environ=ENV,
-                              opener=opener)
+                              opener=opener, loop="plan")
     assert (answer.kind, answer.steps) == (pp.OK, {"steps": GROUNDING})
-    assert opener.sent() == [GROUNDING] and lines == []
+    assert opener.sent() == [on_wire(GROUNDING, "plan")] and lines == []
+    assert [s["kind"] for s in opener.sent()[0]] == [
+        "plan-grounding", "plan-writer", "plan-review"]
     [(request, _)] = opener.requests
     assert request.full_url == URL
     assert request.get_header("Authorization") == f"Bearer {TOKEN}"
@@ -974,10 +1007,11 @@ def test_publish_steps_reads_the_process_environment_by_default():
     opener = FakeOpener(ok_stream(GROUNDING))
     pp.os.environ, pp.OPENER = dict(ENV), opener
     try:
-        answer = pp.publish_steps(GROUNDING, lambda line: None)
+        answer = pp.publish_steps(GROUNDING, lambda line: None, loop="plan")
     finally:
         pp.os.environ, pp.OPENER = saved, saved_opener
-    assert answer.kind == pp.OK and opener.sent() == [GROUNDING]
+    assert answer.kind == pp.OK and opener.sent() == [on_wire(GROUNDING,
+                                                              "plan")]
 
 
 
@@ -1169,11 +1203,11 @@ def test_publish_sends_a_folders_steps_once_with_their_whys_and_says_so():
         opener = FakeOpener(listed(), ok_stream(WHY_STEPS))
         assert run_publish(["publish", tmp], opener) == (
             0, "ok: Pilot holds 3 steps\n")
-        assert opener.sent() == [WHY_STEPS]
+        assert opener.sent() == [on_wire(WHY_STEPS)]
         opener = FakeOpener(ok_stream(STEPS))
         assert run_publish(["publish", tmp, "--plan"], opener) == (
             0, "ok: Pilot holds 2 steps\n")
-        assert opener.sent() == [STEPS]
+        assert opener.sent() == [on_wire(STEPS, "plan")]
         # a miss is printed and goes to the folder's log as `wait`'s does
         assert run_publish(["publish", tmp, "--plan"], FakeOpener(
             urllib.error.URLError("down"))) == (
@@ -1193,6 +1227,482 @@ def test_publish_sends_a_folders_steps_once_with_their_whys_and_says_so():
             assert run_publish(["publish", tmp], FakeOpener(listed()))[0] == 2
         finally:
             sys.stderr = saved
+
+
+# -- the kinds (D1) -----------------------------------------------------------
+
+def test_one_map_gives_each_loops_step_its_kind_the_plans_review_apart():
+    assert pp.KIND_MAP == {"run": RUN_KINDS, "plan": PLAN_KINDS}
+    assert [pp.kind_of(c) for c in (
+        "P3.code", "P3a.code-2", "P3.review", "P3a.review-2", "sweep",
+        "sweep-2", "consult", "test", "docs", "wrap-up", "fixes",
+        "close-out")] == [
+        "code-writer", "code-writer", "review", "review", "sweep", "sweep",
+        "consult", "test", "docs", "wrap-up", "fixes", "close-out"]
+    assert [pp.kind_of(c, "plan") for c in (
+        "ground", "write", "write-2", "review", "review-3")] == [
+        "plan-grounding", "plan-writer", "plan-writer", "plan-review",
+        "plan-review"]
+    assert pp.kind_of("review") == "review" != pp.kind_of("review", "plan")
+    # a name its loop lacks, or no code: no kind
+    for code, loop in (("ground", "run"), ("sweep", "plan"), ("merge", "run"),
+                       ("", "run"), (None, "plan")):
+        assert pp.kind_of(code, loop) is None, (code, loop)
+    try:
+        pp.kind_of("review", "triage")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a loop outside the two was given a kind")
+    # close-out is a code of the run's, and the codes are as they were
+    assert pp.step_code("close-out") == "close-out"
+    assert pp.split_code("close-out-2") == (None, "close-out", 2)
+    # the steps carry it, in the loop their caller names
+    assert pp.make_step("review", "Plan · review", loop="plan")["kind"] == \
+        "plan-review"
+    assert pp.make_step("review", "x")["kind"] == "review"
+    assert "kind" not in pp.make_step("merge", "x")
+    plan = pp.start([pp.make_step("write", "Plan · write", loop="plan")],
+                    "write-2", "Plan · write 2", T0, loop="plan")
+    assert [s["kind"] for s in plan] == ["plan-writer", "plan-writer"]
+    assert pp.phase_steps("2", "Second")[1]["kind"] == "review"
+
+
+# -- the step clock (AIWF-198) ------------------------------------------------
+
+def at(minutes, seconds=0.0):
+    """T0 plus `minutes` (and `seconds`), as the ISO text a step keeps."""
+    from datetime import timedelta
+    return (datetime.fromisoformat(T0)
+            + timedelta(minutes=minutes, seconds=seconds)).isoformat()
+
+
+def step_of(steps, code):
+    return next(s for s in steps if s["code"] == code)
+
+
+def test_a_finished_step_carries_its_whole_seconds_as_an_int():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.start(steps, "P1.review", "P1 · review", at(12, 30.7))
+    code = step_of(steps, "P1.code")
+    assert code["duration"] == 750 and type(code["duration"]) is int
+    assert code["state"] == "done" and code["started"] == at(0)
+    steps = pp.finish_active(steps, at(20))
+    assert step_of(steps, "P1.review")["duration"] == 449
+    # what is done stays as it was: a second finish changes nothing
+    assert pp.finish_phase(steps, "1", at(90)) == pp.finish_phase(
+        steps, "1", at(30))
+    assert step_of(pp.finish_phase(steps, "1", at(90)), "P1.review")[
+        "duration"] == 449
+
+
+def test_a_pause_keeps_its_time_out_of_the_step():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.pause(steps, at(10), reason="halt")
+    code = step_of(steps, "P1.code")
+    assert (code["state"], code["paused"], code["spent"]) == (
+        "active", "halt", 600) and "started" not in code
+    assert pp.active_summary(steps, datetime.fromisoformat(at(35))) == \
+        "P1 code, 10m"
+    # a pause of a paused step, or of none, changes nothing
+    assert pp.pause(steps, at(20)) == steps
+    steps = pp.resume(steps, at(40))
+    assert step_of(steps, "P1.code")["started"] == at(40)
+    assert "paused" not in step_of(steps, "P1.code")
+    steps = pp.finish_active(steps, at(50))
+    assert step_of(steps, "P1.code")["duration"] == 20 * 60
+
+
+def test_a_paused_step_stays_beside_the_step_started_and_runs_again_after():
+    """The close-out's continuation: its own step paused while `fixes`
+    runs, so that each kind keeps its own length."""
+    steps = pp.start([], "close-out", "Close-out", at(0))
+    steps = pp.pause(steps, at(5), "close-out", reason="fixes")
+    steps = pp.start(steps, "fixes", "Fixes", at(5))
+    assert [(s["code"], s["state"]) for s in steps] == [
+        ("close-out", "active"), ("fixes", "active")]
+    assert pp.active_step(steps)["code"] == "fixes"
+    # a halt inside the fixes pass pauses and lifts the fixes step alone
+    halted = pp.pause(steps, at(10), reason="halt")
+    assert step_of(halted, "fixes")["paused"] == "halt"
+    lifted = pp.resume(halted, at(30), reason="halt")
+    assert step_of(lifted, "close-out")["paused"] == "fixes"
+    assert step_of(lifted, "fixes")["started"] == at(30)
+    steps = pp.finish_step(lifted, "fixes", at(45))
+    assert step_of(steps, "fixes")["duration"] == 20 * 60
+    steps = pp.resume(steps, at(45), "close-out")
+    steps = pp.finish_step(steps, "close-out", at(55))
+    assert step_of(steps, "close-out")["duration"] == 15 * 60
+
+
+def test_a_bank_and_a_resume_keep_the_whole_of_the_step():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    # a clean exit banks it; the time the run stood stopped is not the step's
+    exited = pp.bank(steps, at(10))
+    assert step_of(exited, "P1.code")["spent"] == 600
+    assert "started" not in step_of(exited, "P1.code")
+    resumed = pp.restart_clock(exited, at(60))
+    assert step_of(resumed, "P1.code")["started"] == at(60)
+    assert step_of(pp.finish_active(resumed, at(70)), "P1.code")[
+        "duration"] == 1200
+    # a kill: banked up to the old driver's last sign of life
+    resumed = pp.restart_clock(steps, at(60), last_seen=at(15))
+    assert step_of(resumed, "P1.code")["spent"] == 900
+    assert step_of(pp.finish_active(resumed, at(65)), "P1.code")[
+        "duration"] == 1200
+    # no sign of life: the open stretch is lost, the banked seconds are not
+    resumed = pp.restart_clock(pp.restart_clock(exited, at(60)), at(100))
+    assert step_of(pp.finish_active(resumed, at(105)), "P1.code")[
+        "duration"] == 900
+    # a sign of life before the clock's start counts nothing
+    resumed = pp.restart_clock(steps, at(60), last_seen=at(-5))
+    assert step_of(resumed, "P1.code")["spent"] == 0
+    # a paused step stays paused across a resume
+    paused = pp.pause(steps, at(5))
+    assert pp.restart_clock(paused, at(60)) == paused
+
+
+def test_a_step_started_again_drops_its_duration_and_counts_on():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.start(steps, "P1.review", "P1 · review", at(10))
+    assert step_of(steps, "P1.code")["duration"] == 600
+    # the round reattached under its number: active again, counted whole
+    steps = pp.start(steps, "P1.code", "P1 · First", at(20))
+    code = step_of(steps, "P1.code")
+    assert code["state"] == "active" and "duration" not in code
+    assert (code["spent"], code["started"]) == (600, at(20))
+    assert "duration" not in pp.sanitize(steps)[0]
+    steps = pp.finish_active(steps, at(25))
+    assert step_of(steps, "P1.code")["duration"] == 900
+    # an active step dispatched again under its number banks what it ran
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.start(steps, "P1.code", "P1 · First", at(10))
+    steps = pp.finish_active(steps, at(15))
+    assert step_of(steps, "P1.code")["duration"] == 900
+
+
+def test_a_step_finished_without_running_has_no_duration():
+    steps = seeded()
+    steps = pp.finish_step(steps, "test", at(5))
+    steps = pp.finish_phase(steps, "2", at(5))
+    steps = pp.start(steps, "P1.code", "P1 · First", at(0))
+    steps = pp.finish_phase(steps, "1", at(10))
+    assert step_of(steps, "P1.code")["duration"] == 600
+    for code in ("P1.review", "P2.code", "P2.review", "test"):
+        assert "duration" not in step_of(steps, code), code
+    # one started with no time has no clock, so no duration either
+    untimed = pp.finish_active(pp.start(seeded(), "sweep", "Gate sweep"))
+    assert "duration" not in step_of(untimed, "sweep")
+    sent = pp.sanitize(steps)
+    assert [s["code"] for s in sent if "duration" in s] == ["P1.code"]
+
+
+# -- a step's conversations (AIWF-184, D5) -----------------------------------
+
+def test_a_steps_conversations_are_the_first_100_once_each_in_order():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.add_conversation(steps, None, "s-1")
+    steps = pp.add_conversation(steps, "P1.review", "s-2")
+    for sid in ("s-1", "", "  ", "x" * 65, None, 7, "y" * 64, "s-3"):
+        steps = pp.add_conversation(steps, None, sid)
+    assert step_of(steps, "P1.code")["conversations"] == ["s-1", "y" * 64,
+                                                         "s-3"]
+    assert step_of(steps, "P1.review")["conversations"] == ["s-2"]
+    # a code not on the list, or no active step: nothing changes
+    assert pp.add_conversation(steps, "P9.code", "s-9") == steps
+    assert pp.add_conversation(seeded(), None, "s-9") == seeded()
+    for i in range(120):
+        steps = pp.add_conversation(steps, "P2.code", f"c-{i}")
+    kept = step_of(steps, "P2.code")["conversations"]
+    assert kept == [f"c-{i}" for i in range(100)]
+    assert pp.clip_conversations(["a", "b", "a", "x" * 65, " ", "c"]) == [
+        "a", "b", "c"]
+    assert pp.clip_conversations("a") == [] == pp.clip_conversations(None)
+    # sent as stored, and the list Pilot was given always there
+    assert pp.sanitize(steps)[2]["conversations"] == kept
+    assert pp.sanitize(steps)[-1]["conversations"] == []
+
+
+# -- the gate mark (AIWF-203, D3) ---------------------------------------------
+
+def test_the_gate_mark_shows_once_the_rounds_gate_passes_its_minutes():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    code = pp.gate_started(step_of(steps, "P1.code"), at(5))
+    code = pp.gate_ended(code, at(25))
+    assert code["gate_s"] == 1200 and "marked" not in code
+    code = pp.gate_started(code, at(30))
+    # a running gate counts as it runs: 20 + 19 minutes, then 20 + 21
+    assert not pp.gate_marked(code, at(49))
+    assert pp.gate_marked(code, at(51))
+    assert not pp.gate_marked(code, at(40), minutes=40)
+    assert pp.gate_marked(code, at(40), minutes=29)
+    steps = pp.edit_step(steps, "P1.code", lambda s: code)
+    assert pp.sanitize(steps, at=at(49))[0]["marked"] is False
+    assert pp.sanitize(steps, at=at(51))[0]["marked"] is True
+    assert pp.sanitize(steps, at=at(40), gate_mark_minutes=29)[0]["marked"]
+    # a setting that is not a positive int is the default
+    assert pp.GATE_MARK_MINUTES == 40
+    assert pp.gate_marked(code, at(51), minutes=0)
+    assert not pp.gate_marked(code, at(49), minutes=True)
+
+
+def test_the_gate_mark_is_kept_on_the_step_to_its_done_publication():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.edit_step(steps, None, lambda s: pp.gate_started(s, at(1)))
+    steps = pp.edit_step(steps, None, lambda s: pp.gate_ended(s, at(45)))
+    assert step_of(steps, "P1.code")["marked"] is True
+    # sticky: a later, higher threshold does not take it back
+    assert pp.sanitize(steps, gate_mark_minutes=500)[0]["marked"] is True
+    done = pp.start(steps, "P1.review", "P1 · review", at(50))
+    assert pp.sanitize(done)[0] == on_wire(
+        [{"code": "P1.code", "label": "P1 · First", "state": "done"}],
+        marked=True, duration=3000)[0]
+    # `mark` keeps it where a running gate passed it, for the driver to save
+    running = pp.gate_started(pp.make_step("P2.code", "x", "active"), at(0))
+    assert pp.mark(running, at(30)).get("marked") is None
+    assert pp.mark(running, at(41))["marked"] is True
+    # a finish ends a gate still running at its time: the done step's
+    # gate seconds stop there
+    ended = pp.finish_active([dict(running, started=at(0))], at(30))[0]
+    assert ended["gate_s"] == 1800 and "gate_started" not in ended
+    assert pp.sanitize([ended], at=at(500))[0]["marked"] is False
+    # a mark that is no bool is none
+    assert pp.sanitize([dict(STEPS[0], marked="yes")])[0]["marked"] is False
+
+
+# -- what Pilot refuses -------------------------------------------------------
+
+FIELDS = {"code", "label", "state", "why", "kind", "duration", "marked",
+          "conversations"}
+
+
+def refusals(steps):
+    """Each reason Pilot's `set_progress` (slice 049) would refuse `steps`
+    for, the whole call over any one of them: its step schema
+    (`extra="forbid"`), the list's limits and a duration on a step not
+    left done."""
+    out = []
+    if len(steps) > 100:
+        out.append("over 100 steps")
+    codes = [s.get("code") for s in steps]
+    if len(set(codes)) < len(codes):
+        out.append("a code repeated")
+    for s in steps:
+        def bad(why, s=s):
+            out.append(f"{s.get('code')!r}: {why}")
+        if set(s) - FIELDS:
+            bad(f"unknown fields {sorted(set(s) - FIELDS)}")
+        for field, top in (("code", 64), ("label", 120)):
+            v = s.get(field)
+            if not isinstance(v, str) or not 1 <= len(v) <= top:
+                bad(field)
+        if "state" in s and s["state"] not in ("pending", "active", "done"):
+            bad("state")
+        if "why" in s and not (isinstance(s["why"], str)
+                               and 1 <= len(s["why"]) <= 120):
+            bad("why")
+        if "kind" in s and not (isinstance(s["kind"], str) and s["kind"].strip()
+                                and len(s["kind"]) <= 64):
+            bad("kind")
+        if "duration" in s:
+            d = s["duration"]
+            if type(d) is not int or not 0 <= d <= 2**31 - 1:
+                bad("duration")
+            if s.get("state") != "done":
+                bad("a duration not done")
+        if "marked" in s and type(s["marked"]) is not bool:
+            bad("marked")
+        if "conversations" in s:
+            c = s["conversations"]
+            if not isinstance(c, list) or len(c) > 100 \
+                    or len(set(c)) < len(c) \
+                    or any(not isinstance(i, str) or not i.strip()
+                           or len(i) > 64 for i in c):
+                bad("conversations")
+    return out
+
+
+MESSY = [
+    {"code": "P1.code", "label": "  ", "state": "done", "kind": " ",
+     "duration": 2**40, "marked": "yes", "conversations": [
+         "a", "a", "", " ", "x" * 65, 3, *[f"c{i}" for i in range(120)]],
+     "started": T0, "spent": 12.5, "gate_s": 3.0, "gate_started": T0,
+     "paused": "halt", "why": "\n"},
+    {"code": "P1.review", "label": "r" * 200, "state": "active",
+     "duration": 30, "kind": "k" * 65, "why": "w" * 300},
+    {"code": "P2.code", "label": "x", "state": "pending", "duration": 3},
+    {"code": "P2.review", "label": "x", "state": "done", "duration": True},
+    {"code": "sweep", "label": "x", "state": "done", "duration": -4.7},
+    {"code": "consult", "label": "x", "state": "done", "duration": "300"},
+    {"code": "test", "label": "x", "state": "done",
+     "duration": float("nan")},
+    {"code": "docs", "label": "x", "state": "done", "duration": 61.9},
+    {"code": "wrap-up", "label": "x", "state": "failed", "duration": 5},
+    {"code": "merge", "label": "x", "state": "done", "conversations": "s-1"},
+    *[{"code": f"x{i}", "label": "x", "state": "pending"} for i in range(95)],
+]
+
+
+def test_sanitize_sends_every_field_of_pilots_and_nothing_it_refuses():
+    for loop in ("run", "plan"):
+        for why in (False, True):
+            sent = pp.sanitize(MESSY, why, loop=loop, at=at(90))
+            assert refusals(sent) == [], refusals(sent)
+            assert pp.sanitize(sent, why, loop=loop) == sent
+    sent = {s["code"]: s for s in pp.sanitize(MESSY + MESSY[:2], True)}
+    assert len(sent) == 100 and "P1.code" not in sent
+    sent = {s["code"]: s for s in pp.sanitize(MESSY[:10], True, at=at(90))}
+    first = sent["P1.code"]
+    assert set(first) == {"code", "label", "state", "kind", "duration",
+                          "marked", "conversations"}
+    assert (first["label"], first["kind"], first["duration"]) == (
+        "P1.code", "code-writer", 2**31 - 1)
+    assert first["marked"] is False
+    assert first["conversations"] == ["a"] + [f"c{i}" for i in range(99)]
+    review = sent["P1.review"]
+    assert "duration" not in review and review["kind"] == "review"
+    assert len(review["why"]) == 120 and len(review["label"]) == 120
+    assert "duration" not in sent["P2.code"]
+    assert [sent[c].get("duration") for c in (
+        "P2.review", "sweep", "consult", "test", "docs")] == [
+        None, 0, None, None, 61]
+    assert "state" not in sent["wrap-up"] and "duration" not in sent["wrap-up"]
+    assert "kind" not in sent["merge"] and sent["merge"]["conversations"] == []
+    # every step names its mark and its conversations, the list Pilot clears
+    # a field by its absence
+    assert all(type(s["marked"]) is bool and isinstance(s["conversations"],
+                                                        list)
+               for s in sent.values())
+    # a running gate past the threshold marks the step at the send
+    opener = FakeOpener(lambda: ok_stream([]))
+    running = [dict(STEPS[1], gate_started=at(0))]
+    pp.send(running, URL, TOKEN, opener)
+    pp.send(running, URL, TOKEN, opener, gate_mark_minutes=10**9)
+    assert [s[0]["marked"] for s in opener.sent()] == [True, False]
+
+
+def test_the_publisher_marks_each_send_and_names_its_loop_by_its_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        running = [pp.gate_started(pp.make_step("P1.code", "x", "active"),
+                                   datetime.now().astimezone()
+                                   .replace(year=2020).isoformat())]
+        path = state_file(tmp, running)
+        opener = FakeOpener(lambda: ok_stream([]))
+        pub, _ = publisher(path, opener)
+        pub.publish(force=True)
+        pp.Publisher(path, print, environ=ENV, opener=opener,
+                     gate_mark_minutes=10**7).publish(force=True)
+        assert [s[0]["marked"] for s in opener.sent()] == [True, False]
+        # a step with no kind takes its loop's: the plan's by its file
+        plan = Path(tmp) / "plan_state.json"
+        plan.write_text(json.dumps({"progress": [
+            {"code": "review", "label": "Plan · review", "state": "active"}]}))
+        pp.Publisher(plan, print, environ=ENV, opener=opener).publish()
+        pp.Publisher(path, print, environ=ENV, opener=opener).publish()
+        assert opener.sent()[2][0]["kind"] == "plan-review"
+        assert opener.sent()[3][0]["kind"] == "code-writer"
+
+
+# -- the first publication of a fresh run (AIWF-200) --------------------------
+
+def test_pending_first_is_the_list_with_every_step_pending_and_no_duration():
+    steps = pp.start(seeded(), "P1.code", "P1 · First", at(0))
+    steps = pp.start(steps, "P1.review", "P1 · review", at(10))
+    steps = pp.add_conversation(steps, "P1.code", "s-1")
+    before = json.loads(json.dumps(steps))
+    first = pp.pending_first(steps)
+    assert steps == before
+    assert [s["state"] for s in first] == ["pending"] * len(steps)
+    assert not any("duration" in s for s in first)
+    assert [s["code"] for s in first] == [s["code"] for s in steps]
+    assert first[0]["conversations"] == ["s-1"]
+    sent = pp.sanitize(first)
+    assert [s["state"] for s in sent] == ["pending"] * len(steps)
+    assert not any("duration" in s for s in sent) and refusals(sent) == []
+    assert pp.pending_first([]) == []
+
+
+# -- the seed client (AIWF-196) -----------------------------------------------
+
+TIMINGS = [{"key": "specs/001_invented/run/P1.code", "kind": "code-writer",
+            "ended_at": "2026-10-03T14:05:00+00:00", "duration": 540,
+            "listed_ahead": True},
+           {"key": "specs/001_invented/plan/write", "kind": "plan-writer",
+            "ended_at": "2026-10-02T09:00:00+02:00", "duration": 300}]
+
+
+def seeded_answer(n, structured=True):
+    result = {"content": [{"type": "text",
+                           "text": json.dumps({"timings": n})}]}
+    if structured:
+        result["structuredContent"] = {"timings": n}
+    return FakeResponse(sse([f"data: {json.dumps({'jsonrpc': '2.0', 'id': 1, 'result': result})}"]))
+
+
+def test_the_seed_is_one_call_of_seed_step_timings_as_send_makes_it():
+    opener = FakeOpener(seeded_answer(2))
+    url, token = pp.credentials(ENV)
+    assert (url, token) == (URL, TOKEN)
+    assert pp.credentials({}) == ("", "")
+    answer = pp.seed_step_timings(TIMINGS, url, token, opener)
+    assert (answer.kind, answer.timings) == (pp.OK, 2)
+    [(request, timeout)] = opener.requests
+    assert timeout == pp.SEED_TIMEOUT == 30
+    assert request.full_url == URL
+    assert request.get_header("Authorization") == f"Bearer {TOKEN}"
+    assert json.loads(request.data) == {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "seed_step_timings",
+                   "arguments": {"timings": TIMINGS}}}
+    # an answer with the count in its text alone
+    answer = pp.seed_step_timings(TIMINGS, URL, TOKEN, FakeOpener(
+        seeded_answer(2, structured=False)))
+    assert (answer.kind, answer.timings) == (pp.OK, 2)
+    # the seed's default opener is the module's seam, as `send`'s is
+    saved = pp.OPENER
+    pp.OPENER = FakeOpener(seeded_answer(1))
+    try:
+        assert pp.seed_step_timings(TIMINGS[:1], URL, TOKEN).timings == 1
+    finally:
+        pp.OPENER = saved
+
+
+def test_the_seed_says_why_it_wrote_nothing_and_holds_no_token():
+    refusal = {"jsonrpc": "2.0", "id": 1, "result": {
+        "isError": True, "content": [{"type": "text", "text":
+                                      "work item 7 has no repo"}]}}
+    answer = pp.seed_step_timings(TIMINGS, URL, TOKEN, FakeOpener(
+        FakeResponse(sse([f"data: {json.dumps(refusal)}"]))))
+    assert (answer.kind, answer.reason) == (pp.REFUSED,
+                                            "work item 7 has no repo")
+    unknown = {"jsonrpc": "2.0", "id": 1,
+               "error": {"message": f"Unknown tool for {TOKEN}"}}
+    answer = pp.seed_step_timings(TIMINGS, URL, TOKEN, FakeOpener(
+        FakeResponse(sse([f"data: {json.dumps(unknown)}"]))))
+    assert answer.kind == pp.REFUSED and TOKEN not in answer.reason
+    answer = pp.seed_step_timings(TIMINGS, URL, TOKEN, FakeOpener(
+        http_error(403, f"no turn {TOKEN}")))
+    assert answer.kind == pp.NO_ANSWER and TOKEN not in answer.reason
+    for wrong in ([], [TIMINGS[0]] * 1001, None):
+        try:
+            pp.seed_step_timings(wrong, URL, TOKEN, FakeOpener(
+                seeded_answer(0)))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{wrong!r:.30} was sent")
+    pp.seed_step_timings([TIMINGS[0]] * 1000, URL, TOKEN, FakeOpener(
+        seeded_answer(1000)))
+
+
+def test_discover_says_whether_a_pilot_lists_the_seed():
+    tools = pilot_tools()
+    assert pp.discover(URL, TOKEN, FakeOpener(listed(tools))).takes.seed \
+        is False
+    seeding = tools + [{"name": "seed_step_timings",
+                        "inputSchema": {"type": "object"}}]
+    assert pp.discover(URL, TOKEN, FakeOpener(listed(seeding))).takes.seed
+
 
 if __name__ == "__main__":
     _tests = [v for k, v in sorted(globals().items())
