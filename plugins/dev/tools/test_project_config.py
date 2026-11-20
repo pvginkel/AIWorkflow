@@ -117,6 +117,30 @@ def test_a_migrations_table_needs_both_keys_and_globs_relative_to_the_repo():
                      'heads = 1\n', "unknown key", "`heads`")
 
 
+def test_the_gate_mark_is_forty_minutes_unless_the_repo_sets_its_own():
+    """A code round's step is marked once its own gate runs pass the
+    minutes (D3): the operator's 40, or what `[progress]` sets."""
+    with tempfile.TemporaryDirectory() as tmp:
+        assert load(tmp, 'spec_repo = "../s"\n').gate_mark_minutes == 40
+        assert project_config.GATE_MARK_MINUTES == 40
+        assert load(tmp, 'spec_repo = "../s"\n[progress]\n'
+                         'gate_mark_minutes = 15\n').gate_mark_minutes == 15
+        assert load(tmp, 'spec_repo = "../s"\n[progress]\n'
+                         ).gate_mark_minutes == 40
+
+
+def test_the_gate_mark_is_a_positive_whole_number_of_minutes():
+    with tempfile.TemporaryDirectory() as tmp:
+        for value in ("0", "-5", "2.5", '"40"', "true"):
+            refuses(tmp, f'[progress]\ngate_mark_minutes = {value}\n',
+                    "`progress.gate_mark_minutes`",
+                    "positive whole number of minutes",
+                    "`gate_mark_minutes = 40`")
+        refuses(tmp, '[progress]\ngate_mark = 40\n', "unknown key",
+                "`gate_mark`", "`gate_mark_minutes`")
+        refuses(tmp, 'progress = 40\n', "must be a table")
+
+
 def test_switches_read_back_as_written():
     with tempfile.TemporaryDirectory() as tmp:
         cfg = load(tmp, 'spec_repo = "../specs"\n'

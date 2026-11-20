@@ -32,6 +32,9 @@ TOML, parsed with `tomllib` (read-only, stdlib). Nothing writes this file —
     paths = ["backend/app/migrations/versions/*.py"]
     check = "<a command that exits 0 while the migrations have one head>"
 
+    [progress]
+    gate_mark_minutes = 40
+
     [[file_classes]]
     class = "generated"
     paths = ["backend/openapi-cache/**"]
@@ -48,6 +51,10 @@ took origin's commits in over the slice's own migrations, the run loop's phase
 gate runs `check` with `sh -c` from the phase's tree, and any exit but 0 is a
 red gate. The check is the project's — the pipeline names no migration
 tool — and with no table no phase runs one. Both keys, or neither.
+
+`[progress] gate_mark_minutes` is how long a code round's own gate runs may
+take before Pilot shows the round's step marked (`pilot_progress.py`): a
+positive whole number of minutes, GATE_MARK_MINUTES where unstated.
 
 `[[file_classes]]` is the project's own file-class rules, which the loops
 copy into the run records for the labeller (`project-contract.md` § File
@@ -92,7 +99,11 @@ _TABLES = {
     "devlock": {"lease"},
     "push": {"enabled", "deploys"},
     "migrations": {"paths", "check"},
+    "progress": {"gate_mark_minutes"},
 }
+# A code round's gate minutes past which its step is marked, where the file
+# sets none — pilot_progress.GATE_MARK_MINUTES, the operator's 40 (D3).
+GATE_MARK_MINUTES = 40
 
 
 class ConfigError(Exception):
@@ -126,6 +137,9 @@ class ProjectConfig:
     # `[[file_classes]]`: the project's file-class rules in the file's order,
     # each `{"class": ..., "paths": [...]}` — () where it states none
     file_classes: tuple[dict, ...] = ()
+    # `[progress] gate_mark_minutes`: the minutes of a code round's own gate
+    # runs past which Pilot shows its step marked
+    gate_mark_minutes: int = GATE_MARK_MINUTES
 
 
 def config_path(root: Path) -> Path:
@@ -155,6 +169,19 @@ def _bool(table: dict, key: str, where: str, path: Path, default: bool) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(
             f"`{where}` in {path} must be true or false (got {value!r}).")
+    return value
+
+
+def _minutes(table: dict, key: str, where: str, path: Path,
+             default: int) -> int:
+    """A positive whole number of minutes, `default` where unstated."""
+    value = table.get(key)
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(
+            f"`{where}` in {path} must be a positive whole number of minutes "
+            f"(got {value!r}) — write it as `{key} = 40`.")
     return value
 
 
@@ -267,6 +294,7 @@ def load(root: Path) -> ProjectConfig:
     lock_tbl = _table(data, "devlock", path)
     push_tbl = _table(data, "push", path)
     migrations_tbl = _table(data, "migrations", path)
+    progress_tbl = _table(data, "progress", path)
 
     test_on = _bool(test_tbl, "enabled", "test_phase.enabled", path, True)
     doc_on = _bool(doc_tbl, "enabled", "doc_phase.enabled", path, True)
@@ -313,6 +341,8 @@ def load(root: Path) -> ProjectConfig:
                                   path)
 
     file_classes = _file_classes(data, path)
+    gate_mark = _minutes(progress_tbl, "gate_mark_minutes",
+                         "progress.gate_mark_minutes", path, GATE_MARK_MINUTES)
 
     # The lease lives in the spec repo — the shared mount every contending repo
     # can see — so a lease named with nowhere to resolve it against is broken,
@@ -340,4 +370,5 @@ def load(root: Path) -> ProjectConfig:
         migration_paths=migration_paths,
         migration_check=migration_check,
         file_classes=file_classes,
+        gate_mark_minutes=gate_mark,
     )
