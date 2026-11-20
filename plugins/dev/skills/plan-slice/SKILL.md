@@ -55,9 +55,10 @@ tool takes, `<task>` the brief's plan task, and a tool is
    with no slice folder to hold a document — no slice of that name, or no spec repo — ends the
    turn with its last message saying what failed and what fixes it. A pass's notes go into the
    turn's last message.
-3. **Prepare**: `plan_loop.py progress <slice> --ground active`, the work item's steps before
-   the loop exists (pilot.md § The progress), and `debrief.py ground <slice> --start`, the
-   preparer's start, then dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket.
+3. **Prepare**: `plan_loop.py progress <slice> --ground pending`, then `--ground active` in a
+   call of its own, the work item's steps before the loop exists, listed before the grounding
+   starts so that its time counts toward an estimate (pilot.md § The progress), and
+   `debrief.py ground <slice> --start`, the preparer's start, then dispatch `dev:plan-preparer` with `<slice>`, `<task>` and the ticket.
    It leaves `grounding.md` and `plan.md`'s seeded header in the folder, gives its debrief into
    the folder, commits nothing (step 4 commits its files), and hands back the path of its store,
    `asks/<n>-requirements.json`, or `nothing to ask`. Once it is back,

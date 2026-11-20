@@ -111,7 +111,9 @@ kc project lint        # cexec python uv run --with ruff ruff check .
   `seed_run_records.py` (a run-once copy of old slices' state files, their facts
   (`slice.json`) and the history's groups into the run records, the loops' record of every run
   in the plugin's data folder,
-  `runner-state.md` § The run records), `labeller.py` (the command Pilot's analysis dashboard
+  `runner-state.md` § The run records), `seed_timings.py` (a run-once send of a repository's
+  past runs' step timings to Pilot's `seed_step_timings`, from its spec repo's completed
+  slices, for the estimate's history; `pilot.md` § The progress), `labeller.py` (the command Pilot's analysis dashboard
   runs for the workflow's labels of every transcript, from the run records: its verbs, and
   `check`, the replay check over the home's transcripts; with `labeller_vocab.py`,
   `labeller_files.py`, `labeller_records.py`, `labeller_tools.py`, `labeller_engine.py` and

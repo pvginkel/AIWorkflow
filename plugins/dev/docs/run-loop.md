@@ -735,7 +735,8 @@ end lines say it an entry a line: `landed: B3 <sha>`, `carded: T4 — <reason>`,
 `fixes: nothing was ruled fix now`.
 
 - **Nothing marked, nothing done.** Where `close_out.py worklist --fixes` names nothing, the pass
-  ends at once, with no dispatch and no step.
+  ends at once, with no dispatch and no step started: a `fixes` step its detached launcher listed
+  stays `pending`, so the skill launches the pass only where a ruling is marked.
 - **Branches of its own.** The store is committed as the pass found it, and the targets are set
   up as at a run's start. Each code repo the slice touched and the plan does not hold gets
   `phase/<NNN>-fixes`, cut from its base; where the project pushes, the base is fast-forwarded to
@@ -771,56 +772,130 @@ The pass's wrap-up gives its debrief as every dispatch does, kept in `debrief.js
 `Fixes`; Pilot was handed the run's debrief once, when the run completed, so this one stays in
 the file the continuation commits.
 
+**Its step is the continuation's, not the run's.** The close-out's continuation is a work item
+of its own, and its list is the close-out's steps alone, `state.json`'s `close_out_progress`
+(the operator, 2026-11-20: a close-out with a fixes pass publishes two steps): `close-out`, which
+the continuation's session publishes itself (§ The steps Pilot shows), and `fixes`. The detached
+launcher lists `fixes` `pending` at the end of that list and publishes it before it hands back,
+so the step stands listed before it starts; the pass starts it as its first act, `Fixes`, and
+pauses the `close-out` step's clock, so that each keeps a length of its own; its end, or any exit
+of it, banks `fixes` and runs the close-out's clock again. The pass's sessions are `fixes`'s
+conversations, its debrief entry's step is `fixes`, and its `wait` publishes the continuation's
+list, never the run's `progress`, which stays the run's record as the run left it. A pass
+relaunched after an error keeps its one step, the time it ran kept; a state from before
+0.10.91 whose `fixes` step a pass left active in `progress` has it moved over.
+
 A stop before the landing starts the pass again from a clean slate: the trees put back, the
 fixes branches deleted and the store taken back to where the pass found it. A stop at or after
 the landing takes the pass up there.
 
 ## The steps Pilot shows
 
-The run keeps the steps it goes through in `state.json`'s `progress`, and the `wait` its stage's
-session runs publishes them as the work item's progress ([pilot.md](pilot.md) § The progress).
-The driver writes the list and calls nothing. A step is a `code`, a `label` short enough for a
-phone and a `state`: `pending`, `active` or `done`, with no failed and no skipped state. The code
-is `[<phase>.]<kind>[-<round>]`, its kind from a fixed set that a later ETA keys on, and a round
-past the first is a step of its own, never a reused one, so the tile shows the work growing:
+The run keeps the steps it goes through in `state.json`'s `progress`, and the session's own
+processes publish them as the work item's progress, its launcher once and its `wait` from then on
+([pilot.md](pilot.md) § The progress, which holds what Pilot is sent and why). The driver writes
+the list and calls nothing. A step is a `code`, a `label` short enough for a phone and a `state`:
+`pending`, `active` or `done`, with no failed and no skipped state. The code is
+`[<phase>.]<name>[-<round>]`, its name from a fixed set, and a round past the first is a step of
+its own, never a reused one, so the tile shows the work growing. Each step also carries its
+`kind`, the name Pilot's estimate prices it by, from the one map in `pilot_progress.py` (the
+operator, 2026-11-20); codes never change, since the debrief and the labeller read them:
 
-| Kind | Codes and labels | Active from, until the next step starts |
-|---|---|---|
-| `code` | `P3.code` "P3 · \<title\>", `P3.code-2` "P3 · code 2" | a code-writer round's dispatch (the first, a gate fix, a review fix, the writer-direct resume), through the gate after it |
-| `review` | `P3.review` "P3 · review", `P3.review-2` "P3 · review 2" | a review round's dispatch, through its funding consult; the last one through the merge |
-| `sweep` | `sweep` "Gate sweep", `sweep-2` "Gate sweep 2" | a loop-tail sweep that runs, to its record; a reused record is no step |
-| `consult` | `consult` "Completion consult", `consult-2` "Completion consult 2" | the completion consult's dispatch, to its answer, or after a `flake` through the test-fixer's rounds; one a resume finds answered is no step |
-| `test` | `test` "Test phase", `test-2` "Test phase 2" | a test round's dispatch, to its verdict and the push check after it |
-| `docs` | `docs` "Doc phase" | the doc-writer's dispatch |
-| `wrap-up` | `wrap-up` "Wrap-up" | the wrap-up, then the doc gate and its nudges, the landing and the other repos' pushes, to the ladder's end |
-| `fixes` | `fixes` "Fixes", "Fixes · 2 landed, 1 carded" once done | the fixes pass, after the close-out is answered: its dispatch, gate, landing and record; a pass with nothing marked is no step |
+| Name | Kind | Codes and labels | Active from, until the next step starts |
+|---|---|---|---|
+| `code` | `code-writer` | `P3.code` "P3 · \<title\>", `P3.code-2` "P3 · code 2" | a code-writer round's dispatch (the first, a gate fix, a review fix, the writer-direct resume), through the gate after it |
+| `review` | `review` | `P3.review` "P3 · review", `P3.review-2` "P3 · review 2" | a review round's dispatch, through its funding consult; the last one through the merge |
+| `sweep` | `sweep` | `sweep` "Gate sweep", `sweep-2` "Gate sweep 2" | a loop-tail sweep that runs, to its record; the first is listed from the start, and one the run passes over, its record reused, is finished unrun |
+| `consult` | `consult` | `consult` "Completion consult", `consult-2` "Completion consult 2" | the completion consult's dispatch, to its answer, or after a `flake` through the test-fixer's rounds; the first is listed from the start, and one a resume finds answered is finished unrun |
+| `test` | `test` | `test` "Test phase", `test-2` "Test phase 2" | a test round's dispatch, to its verdict and the push check after it |
+| `docs` | `docs` | `docs` "Doc phase" | the doc-writer's dispatch |
+| `wrap-up` | `wrap-up` | `wrap-up` "Wrap-up" | the wrap-up, then the doc gate and its nudges, the landing and the other repos' pushes, to the ladder's end |
+| `close-out` | `close-out` | `close-out` "Close-out" | the close-out's continuation, published by its session, its clock paused while `fixes` runs; on the continuation's list, never the run's (below) |
+| `fixes` | `fixes` | `fixes` "Fixes", "Fixes · 2 landed, 1 carded" once done | the fixes pass, after the close-out is answered: its dispatch, gate, landing and record; on the continuation's list (§ The fixes pass) |
 
 The round is the one the run counts: the phase's code-writer rounds, its review rounds, the sweep
 runs, the completion consults answered, the test rounds. A reattached round keeps its number and
 so its step.
 
 At the start, on disk before the start is reported, so that the first `wait` finds it, the whole
-known list goes in `pending`: each phase's `code` and `review` in the plan's order, then `test`
-and `docs` where the project runs those phases, then `wrap-up`. A resume keeps the list it finds,
-and one whose state has none, a run started before 0.10.29, seeds it from where the run stands:
-each phase already `✅ DONE` as `done`, the steps of the stages behind it `done`, and the
-wrap-up `active` from the doc gate on. A phase the plan gains, a consult's, the test phase's or
-the operator's, has its two steps added `pending` at the next parse, before the first pending
-step of a later phase or of the run's tail. A step that starts goes in before the first pending step, so the list
-reads in the order the run went, and starting it marks the step before it `done`. A merged
-phase's steps are all `done`, and so is a run's every step at exit 0. The wrap-up that a run with
-no doc phase and nothing waiting passes over is `done` too: the run reached it.
+known list goes in `pending`: each phase's `code` and `review` in the plan's order, then the
+completion check's first `sweep` and first `consult`, which every run takes, then `test` and
+`docs` where the project runs those phases, then `wrap-up`. A resume keeps the list it finds, and
+one whose state has none, a run started before 0.10.29, seeds it from where the run stands: each
+phase already `✅ DONE` as `done`, the sweep and the consult `done` behind a run that took one or
+is past them, the steps of the stages behind it `done`, and the wrap-up `active` from the doc
+gate on. A list from before 0.10.91, with no sweep or consult in it, is kept as it is, and gains
+them as steps that start. A phase the plan gains, a consult's, the test phase's or the
+operator's, has its two steps added `pending` at the next parse, before the first pending step
+of a later phase or of the run's tail, the first sweep's now among them. A step that starts goes
+in before the first pending step, or is the pending one of its code, so the list reads in the
+order the run went, and starting it marks the step before it `done`. A merged phase's steps are
+all `done`, and so is a run's every step at exit 0.
 
-A step that starts also carries `started`, the time it went active, for `wait`'s `running` line
-(`running: P4 code, 12m`, `running: P4 review r2, 1h05m`); Pilot is never sent it. A stop leaves
-the list as it stood: a bail, a halt or an interrupt keeps the active step active, so a stopped
-run's tile says where it stopped, and the resume's next step marks it `done`. A resume restarts
-the active step's clock, so the time the run stood stopped is not counted in it. A step
-the run never reaches stays `pending`. What fits no kind is folded into the step it happens in,
-never given a kind of its own: the gate into the code round before it; the review-funding
-consult, the merge and a rebase onto a moved base into the review round; the doc gate and the
-landing into the wrap-up. The run's start (preflight, the tool and service checks, the setup) and
-the driver's push where there is no test phase are in no step.
+**A step the run passes over** is finished unrun, `done` with no duration, never left `pending`
+on a run that went past it: the sweep and the consult once the completion check is behind the
+run, the consult already answered on the plan as it stands, a sweep whose record still describes
+the tree, a resume into the test phase; and the wrap-up that a run with no doc phase and nothing
+waiting passes over, which the run reached. A step of a run that stops before it stays `pending`.
+
+**The launch's list.** A fresh `run --detach` publishes the seeded list, every step `pending`,
+before it hands back, whatever the driver has started meanwhile; a `--resume --detach` publishes
+the list as it stood before the driver went on, read before it is spawned: done steps done, a
+round the stop left active still active, the rest pending. So every step the driver starts after
+the launch stood on the work item's first list, and only a round running across a stop comes onto
+a continuation's list begun (pilot.md § The progress, listed before it starts). A publication
+that fails is a line in `log.txt` and never fails the launch.
+
+**The clock.** A step that starts carries `started`, the time its clock last started, and
+`spent`, the seconds it banked before; its time is the two together, for `wait`'s `running` line
+(`running: P4 code, 12m`, `running: P4 review r2, 1h05m`) and, once it is `done`, for its
+`duration`, the whole seconds Pilot keeps as its timing. Pilot is sent neither `started` nor
+`spent`. The time a step runs is the run's own measure:
+
+- **A usage halt is not in it.** The session-limit sleep pauses the active step's clock
+  (`paused`), and it runs again however the sleep ends.
+- **A stop is not in it.** Every exit banks the active step's open stretch, so the time the run
+  then stands stopped, a hand-back's wait on the operator above all, is not the step's. A driver
+  killed with no exit on record is banked up to its last sign of life, `log.txt`'s last write as
+  the resume finds it before writing a line, a gate run it left open ended there too.
+- **A reattached round counts whole.** A stop leaves the list as it stood: a bail, a halt or an
+  interrupt keeps the active step active, so a stopped run's tile says where it stopped; the
+  resume runs its clock on from what it banked, and the resume's next step marks it `done` with
+  the time it ran on both sides of the stop.
+- **A wait for the test-suite lock is in it**, as everything folded into the step is.
+
+What fits no name is folded into the step it happens in, never given a step of its own: the gate
+into the code round before it; the review-funding consult, the merge and a rebase onto a moved
+base into the review round; the doc gate and the landing into the wrap-up. The run's start
+(preflight, the tool and service checks, the setup) and the driver's push where there is no test
+phase are in no step.
+
+**The conversations.** A step carries the sessions that did its work, each added to the active
+step the moment the loop notes the session, from the round's start: the writer's, the
+reviewer's, a gate-fix's, the consult's, the test agent's, the doc writer's, the wrap-up's and the
+test-fixer's, a sub-agent's work being its session's. A sweep spawns no session and names none.
+They are kept as noted and sent clipped as pilot.md § The progress says.
+
+**The gate mark.** The driver's own gate runs inside a phase's code round, its gate, the re-gate
+after a fix and the measurement's re-gate and run on the merge base, are timed on that round's
+step: `gate_started` on disk before the run, so a `wait` meanwhile counts it as it runs, and its
+seconds added to `gate_s` at its end. Once they pass the repo's `[progress] gate_mark_minutes`
+([project-contract.md](project-contract.md)), 40 by default, `wait` publishes the step `marked`,
+and the step keeps `marked` to its end (the operator, 2026-11-20). A gate run under another step,
+the merge's re-gate in the review's, is no code round's and is not timed. `wait` reads the setting
+from the `.aiworkflowrc` of the repo it runs in, a missing or broken one taken as the default, so
+a publication is never refused over it.
+
+**The close-out's steps** are the continuation's, a work item of its own, never the run's:
+`state.json`'s `close_out_progress`, beside `progress`, which stays the run's record as the run
+left it. The continuation's session runs `run_loop.py progress <slice> --close-out pending`, then
+`active` in a call of its own before its first step, then `done` after its last, each publishing
+that list from the session's own environment; `pending` starts the list afresh, since each
+continuation's list starts empty, and `done` gives `close-out` the seconds its clock ran, none
+where it never started, `fixes` as it stands. The fixes pass lists and runs `fixes` on the same
+list (§ The fixes pass). `progress` refuses with exit 2 while a driver holds `run.lock`, writes
+no `updated_at`, prints nothing and exits 0 whatever Pilot answered, what could not be published
+in `log.txt`.
 
 **A repeat round's why.** The step that opens a round past the first carries `why`, one line of
 at most 120 characters saying what the round before left unsettled, cut with an ellipsis past
@@ -874,7 +949,9 @@ under the role's own timeout, not the nudge's, and is the same round — its num
 duration added to the row — at most twice per round (the doc-writer yields twice); past that
 the verdict nudge falls back to the same-prompt retry. A session killed by the account's
 session-limit window is not an agent outcome: the driver waits out the stated reset and
-redispatches the same round — nothing counted; Pilot's halt ends that wait early (below). The
+redispatches the same round — nothing counted, the active step's clock paused through the wait
+so that it is no time of the step's ([§ The steps Pilot shows](#the-steps-pilot-shows));
+Pilot's halt ends that wait early (below). The
 driver asserts its agent definitions resolve before dispatching anything (`kc session
 create-headless --agent` does not validate names).
 

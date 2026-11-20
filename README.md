@@ -56,7 +56,7 @@ answers out.
   `plan_loop.py`, `asks.py`, `close_out.py`, `checks.py`, `github_target.py`, `close_slice.py`,
   `slice_cards.py`, `slice_cost.py`, `turn_profile.py`, `preflight.py`, `project_config.py`,
   `redact_secrets.py`, `spec_check.py`, `long_run.py`, `pilot_progress.py`, `debrief.py`,
-  `seed_run_records.py`, `labeller.py` with its `labeller_*.py` modules,
+  `seed_run_records.py`, `seed_timings.py`, `labeller.py` with its `labeller_*.py` modules,
   `allocate-next-slice.sh`, with their suites), and the contract docs
   (`pilot.md` / `run-loop.md` / `runner-state.md` / `plan-loop.md` / `plan-template.md` /
   `agent-dispatch.md` / `close-out.md` / `close-out-template.md`, plus `project-contract.md`,

@@ -45,6 +45,9 @@ lease = "scripts/.devlock.lock"
 enabled = true
 deploys = true
 
+[progress]
+gate_mark_minutes = 40
+
 [migrations]
 paths = ["backend/app/migrations/versions/*.py"]
 check = "cd backend && test \"$(uv run alembic heads | wc -l)\" -eq 1"
@@ -114,6 +117,14 @@ every phase and nobody loses one by omission. Each switch is an opt-*out*:
   ([run-loop.md](run-loop.md) § The per-phase round); a red is taken like any red gate. The
   run profile checks each glob matches a tracked file: one that matches nothing is a typo the
   check would never fire on. The pipeline names no migration tool; the command is the project's.
+
+- **`progress.gate_mark_minutes`** (default 40) — when a code round's step is published to Pilot
+  as marked, the workflow saying it is in trouble, which Pilot shows as "longer than usual": once
+  the driver's own gate runs inside that round total more than this many minutes, the run on it
+  still going counted as it goes ([run-loop.md](run-loop.md) § The steps Pilot shows). A positive
+  whole number. The default is the threshold measured on PilotApp's code steps (PilotAppSpecs
+  `tools/cost-dashboard/eta.md` § 8, "The second pass"); a project whose gate runs long by nature
+  sets it higher.
 
 A phase that is off is not checked for anything: preflight requires a procedure doc only for a
 phase that runs, or an optional phase would be mandatory again.

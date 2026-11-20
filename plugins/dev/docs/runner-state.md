@@ -81,13 +81,23 @@ that gives none keeps it), `prerun_held` (the ids of the actions owed before the
 checks held, or that a person struck, once all of them were met: never evaluated again, so the
 checks gate the start and nothing after it; [run-loop.md](run-loop.md) § Protocol invariants),
 `progress` (the steps the run shows on its Pilot work item, in order, each `{code, label,
-state}`, a step that opens a round past the first its `why` too, and a step the driver started
-its `started` time, which `wait`'s `running` line counts from and Pilot is never sent: seeded
-before the start is reported, edited as each round starts and ends, and read by
-`wait`, which publishes it, never by the driver, which calls nothing; which round is which step
-and where each why comes from is [run-loop.md](run-loop.md) § The steps Pilot shows, the
-publishing [pilot.md](pilot.md) § The progress; absent on a run started before 0.10.29 until its
-first resume), `why_next` (the why waiting for the next round of each track, by its key — `P<id>`
+state, kind}`, a step that opens a round past the first its `why` too; a step the driver started
+its clock, `started`, the time it last started, and `spent`, the seconds it banked before,
+`paused` while a usage halt's sleep or, for the close-out, the fixes pass stops it, which
+`wait`'s `running` line counts and Pilot is never sent; a step done that ran its `duration`, its
+whole seconds; `conversations`, the sessions that did its work, each added as the loop notes it;
+and on a code round `gate_s`, the seconds its finished gate runs took, `gate_started` while one
+runs, and `marked` once they passed the repo's threshold: seeded before the start is reported,
+edited as each round starts and ends, and read by the launcher and `wait`, which publish it,
+never by the driver, which calls nothing; which round is which step, how its clock runs and where
+each why comes from is [run-loop.md](run-loop.md) § The steps Pilot shows, the publishing
+[pilot.md](pilot.md) § The progress; absent on a run started before 0.10.29 until its first
+resume, and a step from before 0.10.91 has no kind, clock or conversations), `close_out_progress`
+(the close-out continuation's own steps, the same shape: `close-out`, which its session's
+`run_loop.py progress --close-out` writes, and `fixes`, the fixes pass's, which a state from
+before 0.10.91 kept in `progress`; what a `wait` on the fixes pass and `progress --close-out`
+publish, never the run's `progress`, which stays the run's record; [run-loop.md](run-loop.md)
+§ The steps Pilot shows), `why_next` (the why waiting for the next round of each track, by its key — `P<id>`
 for a phase, `check` for the completion check, `test` for the test phase — set where a round ends
 unsettled or the run stops, and taken off by the step that opens that track's next round; a merged
 phase's goes with it; [run-loop.md](run-loop.md) § The steps Pilot shows),
@@ -263,6 +273,7 @@ Every environment shares the home, so the folder holds every project's slices:
 |---|---|
 | `runs/<spec-repo>/<NNN_slug>/state.json` | the run loop's `state.json`, whole, at every save and at the exit record |
 | `runs/<spec-repo>/<NNN_slug>/plan_state.json` | the plan loop's `plan_state.json`, the same way |
+| `runs/<spec-repo>/<NNN_slug>/grounding.json` | `{"started"}`, the grounding's start, from the plan-slice session's `plan_loop.py progress --ground active` to its `--ground done`, which times the grounding's step from it and deletes the file ([plan-loop.md](plan-loop.md) § The grounding's steps); kept here so the wait dirties no slice folder |
 | `runs/<spec-repo>/<NNN_slug>/slice.json` | the slice's facts beyond its state files, for the labeller, which reads no slice folder (below) |
 | `…/gates/P<id>_gate_<n>.json` | every run of the phase's gate, `n` from 1 — the first, the one after a fix round or a `clean` test-fixer, the merge's re-gate: its history row and its log's path |
 | `…/gates/P<id>_regate_<n>.json` | every re-gate of a red by its measurement, the red commands again on the same tree, the same way |
@@ -319,6 +330,10 @@ Every environment shares the home, so the folder holds every project's slices:
   guessed. It never replaces a record that is there, so a second run adds only what the first
   could not see — and `filing_commit`, alone, to a `slice.json` that has none. It runs in an environment holding the spec repos,
   a checkout or a fresh clone, since a completed slice's state files are committed.
+- **The timings' seed is another tool.** `seed_timings.py` reads the same committed state files of
+  a repository's completed slices, not these records, and sends their finished steps to Pilot as
+  step timings for its estimate, run once per repository by a work item placed there
+  ([pilot.md](pilot.md) § The progress, the past runs' timings).
 - **The folder's lifetime**, tried on this home on 2026-11-15: created at its first write, kept
   across plugin updates, and **deleted when the plugin is uninstalled** from its last scope.
   Uninstall with `--keep-data`. The seed brings back whatever the spec repos hold, but not the
@@ -355,7 +370,7 @@ writes the file; the plan loop keeps `plan_debrief.json` by the same rules
 | `words` | the debrief as the role gave it, the whitespace around it left off |
 | `passed` | a sweep's result: `true` green, `false` red, left out where nothing in it ran |
 | `why` | on the first entry of a step that carries one: the why its round opened with ([run-loop.md](run-loop.md) § The steps Pilot shows) |
-| `step` | the code of the step in `progress` the dispatch ran under, the active one, which `section` and `round` are read off; the plugin's own |
+| `step` | the code of the step the dispatch ran under, the active one, which `section` and `round` are read off: in `progress`, or for the fixes pass's wrap-up `fixes` in `close_out_progress`; the plugin's own |
 
 Beside `entries`, the file holds `debrief`, the stage session's own account of the run, given at
 the close-out and handed to Pilot with the entries, each less its `step`, and `figures`, the
@@ -428,7 +443,9 @@ relaunch). Every `next:` that names a wait is followed by a `timeout:` line, the
 session's Bash call for it takes. A fixes pass's lines are its own ([run-loop.md](run-loop.md) §
 The fixes pass). Liveness is the `flock`, never the pid. `run_loop.py stop <slice-dir>`
 sends the driver SIGINT: the 130 path, as Ctrl-C. While it waits, `wait` publishes the run's
-`progress` to Pilot ([pilot.md](pilot.md) § The progress).
+`progress` to Pilot, or, on a fixes pass, the close-out continuation's `close_out_progress`; the
+detached launcher publishes it once first, before it hands back ([pilot.md](pilot.md) § The
+progress).
 
 ## Resume and crash recovery
 

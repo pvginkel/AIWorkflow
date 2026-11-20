@@ -51,45 +51,103 @@ work item's, and its `register_document` is refused.
 
 A work item's tile shows the steps its run goes through on a donut, and a stage's steps are its
 loop's: the plan and run loops keep the list in their state file ([run-loop.md](run-loop.md)
-§ The steps Pilot shows) and publish it from their `wait`, never from the driver, and the skill
-never calls `set_progress` itself. `wait` is a process of the waiting session, so its
-`PILOT_TOKEN` is the live one, where the detached loop outlives the session that launched it and
-a continuation is a work item of its own: that work item's list starts empty, and its first
-`wait` publishes the whole list.
+§ The steps Pilot shows) and publish it from the session's own processes, the launcher and
+`wait`, never from the driver, and the skill never calls `set_progress` itself. `wait` is a
+process of the waiting session, so its `PILOT_TOKEN` is the live one, where the detached loop
+outlives the session that launched it and a continuation is a work item of its own: that work
+item's list starts empty, and its first publication carries the whole list.
+
+**What a step carries.** Beside its code, label and state, every step goes with its `kind`, the
+kind of work it is, which Pilot's estimate prices it by; its `conversations`, the Claude Code
+sessions that did its work; and `marked`, whether the workflow holds it to be in trouble. A step
+the call leaves `done` also carries its `duration`, the seconds its work took by the run's own
+measure, which Pilot keeps once as the step's timing. Pilot's own stamps on a step are the
+progress shown and not the history: a continuation's done steps are stamped at its first
+publication, and a step that spans a halt includes the halt.
+
+- **The kind** is named to be read, since the work item's line shows it, and two steps have one
+  kind when their lengths are comparable, so the plan's review and the run's are apart. One map
+  in `pilot_progress.py` gives it from the step's code, for the live publications and the seed
+  alike (the operator, 2026-11-20): the run's `code-writer`, `review`, `sweep`, `consult`,
+  `test`, `docs`, `wrap-up`, `fixes` and `close-out`; the plan's `plan-grounding`,
+  `plan-writer` and `plan-review`. A kind once published is history, so it is never renamed.
+- **The conversations** are the sessions the loops spawn for the step's rounds, each added the
+  moment the loop notes it, so a round's session is on its step from the round's start. A
+  sub-agent's work is its session's. The first 100 are kept, a repeated one once, and an id past
+  64 characters is left out, so a session Pilot was once given stays on its step.
+- **The duration** counts what is folded into the step, the gate inside its code round among it,
+  and a wait for the test-suite lock; it leaves out a usage halt, which pauses the step's clock,
+  and a wait on the operator, which ends the driver. A round reattached after a stop counts
+  whole: the time it ran before the stop is kept, up to the stopped driver's last line in the
+  log. A step finished without running, a sweep the run passed over, carries none.
+- **The mark** is set on a code round once the driver's gate runs inside it pass the project's
+  `[progress] gate_mark_minutes`, 40 by default ([project-contract.md](project-contract.md)), the
+  run still going counted as it goes, and stays set to the step's end, since Pilot records the
+  mark its done publication carries.
+
+**Listed before it starts.** Pilot notes whether a step stood on the list before it began; one a
+work item's first list brings already begun has an unknown listing, and the estimate leaves its
+timing out. So a step is published `pending` before it is published begun: a fresh run's launcher
+publishes the seeded list with every step `pending` before it hands back, a resume's launcher the
+list as it stood before the driver went on, and a step the run adds is added `pending` where it
+can be. A resumed round still going, a continuation's running step, is the one left unknown.
 
 Planning's grounding is the one stretch with no loop to wait on: the preparer runs in the stage's
 own session, before `plan_state.json` exists. So the plan-slice session runs `plan_loop.py
-progress <slice> --ground active` before it dispatches the preparer, and `--ground done` before
-it ends a turn on the requirements. Each sends a fixed list, `ground` "Plan · ground" in the state
-given, then `write` "Plan · write" and `review` "Plan · review" `pending`, and keeps no state. It
-is a process of the session as `wait` is, and sends as `wait` does, by the rules below, its misses
-in `plan_log.txt`. The loop's own list starts with `ground` `done`, so its first `wait` carries
-the three steps on.
+progress <slice> --ground pending`, then `--ground active` in a call of its own, before it
+dispatches the preparer, and `--ground done` before it ends a turn on the requirements. Each sends
+a fixed list, `ground` "Plan · ground" in the state given, then `write` "Plan · write" and
+`review` "Plan · review" `pending`, `--ground done` with the grounding's duration from its
+`active`. It is a process of the session as `wait` is, and sends as `wait` does, by the rules
+below, its misses in `plan_log.txt`. The loop's own list starts with `ground` `done`, so its first
+publication carries the three steps on.
+
+The close-out's continuation publishes the close-out's steps alone, never the run's: `close-out`,
+through `run_loop.py progress <slice> --close-out pending`, `active` and `done`, and, where an
+entry is ruled fix now, `fixes`, which the fixes pass's launcher adds `pending` and its `wait`
+carries on. The close-out's clock stands still while the fixes pass runs, so that each kind keeps
+lengths of its own (the operator, 2026-11-20: a close-out with a fixes pass publishes two steps).
 
 `wait` sends the whole list through `pilot-work`'s `set_progress` at its first probe, at each
 ten-second probe where the list differs from what this `wait` last sent, and once more as it
 returns: one JSON-RPC `tools/call` POSTed to `$PILOT_MCP_URL` with no MCP client. The call is
 PilotApp's `docs/mcp.md` § A tool called with no MCP client, the tool its § `set_progress(steps)`
-and `set_progress_step(code, state)`. The list is held to the tool's limits before it goes, so a
-code past 64 characters or repeated is left out, a label or a why past 120 is cut, and past 100
-steps the oldest go. A call waits three seconds at most, so a slow Pilot never pushes a `wait` past
-the cap its Bash call runs under.
+and `set_progress_step(code, state)`. A call replaces every field of a step, so each step goes with
+all of them every time. Pilot refuses the whole list over any one step past its limits, so the
+list is held to them before it goes: a code past 64 characters or repeated is left out, a label or
+a why past 120 is cut, a step's conversations as above, a duration only on a step sent `done`,
+whole seconds within 2147483647, and past 100 steps the oldest go. A call waits three seconds at
+most, so a slow Pilot never pushes a `wait` past the cap its Bash call runs under.
 
-A step's `why` goes only to a Pilot that takes it, since a Pilot that does not refuses the whole
-list over a field it does not know. The sender learns that from the Pilot itself, never from a
-version or a setting: where a step has a why to send, it first asks the Pilot's `tools/list`, once
-per `wait`, and sends the whys only where `set_progress`'s steps list a `why` field. Against a
-Pilot without one the list goes as it always did. The same answer says whether the Pilot lists
-`register_debrief` (§ The debrief). A `tools/list` that gets no answer leaves the whys out of that send and is
-asked again at the next; one refused is taken as a Pilot that takes neither; each goes to the
-slice's log once per `wait`.
+The kind, the duration, the mark and the conversations go to every Pilot, since both of its stages
+take them (PilotApp's slice 049). A step's `why` goes only to a Pilot that takes it, since a Pilot
+that does not refuses the whole list over a field it does not know. The sender learns that from the
+Pilot itself, never from a version or a setting: where a step has a why to send, it first asks the
+Pilot's `tools/list`, once per `wait`, and sends the whys only where `set_progress`'s steps list a
+`why` field. Against a Pilot without one the list goes without them. The same answer says whether
+the Pilot lists `register_debrief` (§ The debrief). A `tools/list` that gets no answer leaves the
+whys out of that send and is asked again at the next; one refused is taken as a Pilot that takes
+neither; each goes to the slice's log once per `wait`.
 
 Publishing is best-effort and silent. No `PILOT_TOKEN` or `PILOT_MCP_URL` (a session started
 outside Pilot, or one alive across the deploy that brought the variable), no answer, and a refusal
 each go to the slice's log, `log.txt` or `plan_log.txt`, once per kind per `wait`. `wait`'s
-output and exit code never change, `progress` prints nothing and exits 0, and nothing in the
-stage reads the answer. A state file with no
+output and exit code never change, `progress` prints nothing and exits 0 whatever Pilot answered,
+a launch is never failed by its publication, and nothing in the stage reads the answer. A state file with no
 list, from a loop started on a plugin before 0.10.29, publishes nothing.
+
+**The past runs' timings.** `seed_timings.py [<repo-root>]` sends the timings of the runs a
+repository finished before its steps were published with a kind, through Pilot's
+`seed_step_timings`, so that its estimates start from its history. A work item placed in that
+repository runs it once (PilotApp's P-323); Pilot files the timings under the work item's
+repository. It reads the completed slices of the repository's spec repo, the run's and the plan's
+state files, and passes over a slice whose steps carry a kind, since that run's timings went live.
+Each round of a step gives one timing, keyed by the spec repo, the slice, the loop and the step's
+code, so that a second run replaces rather than doubles. Its duration is the sum of the round's
+recorded parts, the session, the gate runs and the fixer's rounds (the operator, 2026-11-20); it
+is listed ahead where a run of today would list it, the first sweep and the first consult
+included, and not for an appended phase's steps or a repeat round's. `--dry-run` prints the
+timings and sends nothing.
 
 ## The debrief
 

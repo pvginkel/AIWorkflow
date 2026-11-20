@@ -221,6 +221,10 @@ At exit 0, in this order:
 
 ## The close-out answered
 
+This work item's steps are the close-out's own, never the run's: `close-out`, and `fixes` where a
+pass runs (pilot.md § The progress). First `run_loop.py progress <slice> --close-out pending`,
+then `--close-out active` in a call of its own, so that the step stands listed before it starts.
+
 1. A sub-agent reads the answers in and marks the fixes, as close-out.md § The continuation
    says: `close_out.py absorb`, then `fix-now` on each ruling that is a `fix now`. It carries out
    nothing else, and hands back the ids it marked.
@@ -234,9 +238,12 @@ At exit 0, in this order:
    commits the store, `close-out.md` as Pilot wrote it back, the record, and the `state.json`,
    `log.txt` and `debrief.json` the pass wrote, by name.
 
-Then the session moves the slice card to done (pilot.md § Cards) and ends the turn. What the
-sub-agents could not carry out as ruled comes back as a store of asks: the session renders and
-registers it and ends the turn, and the card waits for that document's continuation.
+Then the session runs `run_loop.py progress <slice> --close-out done` and commits the
+`state.json` it wrote by name, so that the spec repo is left clean, moves the slice card to done
+(pilot.md § Cards) and ends the turn. What the sub-agents could not carry out as ruled comes back
+as a store of asks: the session renders and registers it, runs `--close-out done` and commits
+`state.json` all the same, since the step's time ends with this turn, and ends the turn, and the
+card waits for that document's continuation.
 
 ## The clarification
 

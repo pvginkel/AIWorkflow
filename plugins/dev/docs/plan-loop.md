@@ -83,19 +83,49 @@ for a bail its `reason:` and the `bailout:` file, for a halt where it stopped; *
 the loop is in with its time, `running: write r2, 3m`, with the `next:` wait to re-arm; **6** `gone`, with the `next:` relaunch, `run … --detach`.
 
 **The steps Pilot shows.** `plan_state.json` keeps `progress` as the run loop's `state.json`
-does, by the same rules ([run-loop.md](run-loop.md) § The steps Pilot shows), and `wait`
-publishes it ([pilot.md](pilot.md) § The progress). The first run seeds `ground`, "Plan ·
-ground", `done`, for the grounding the stage's session ran before the loop and published with
-`plan_loop.py progress <slice> --ground active|done`, then `write`, "Plan · write", and `review`,
-"Plan · review", both `pending`; a reset re-plan, which enters at review, seeds `ground` and
-`review`. Each writer pass is a step, `write`, then `write-2` and on, "Plan · write 2", and
-so is each review. A questions or review exit leaves its step active, and the rerun's pass is a
-step of its own after it. Exit 0 marks the active step done. A rerun keeps the list it finds. A
-pass past the first carries its why, as a run's repeat round does ([run-loop.md](run-loop.md)
-§ The steps Pilot shows): after the writer's questions, "Follows the operator's answers to the
-writer's questions"; after a review, the headlines of its findings that came to the fix pass,
-joined by `;`; after a stop, "Resumed after the loop stopped: " and its reason. `plan_state.json`
-keeps it in `why_next` until the pass's step takes it off.
+does, by the same rules ([run-loop.md](run-loop.md) § The steps Pilot shows): the clock, banked
+at every exit and up to `plan_log.txt`'s last write after a kill, so that a stop's wait is no
+step's time and a pass's done step carries its whole `duration`; the sessions on the active step
+from the pass's start; and the launch's list. The launcher and `wait` publish it ([pilot.md](pilot.md) §
+The progress). Its steps carry the plan's kinds, apart from the run's, so that a plan's review
+is never priced as a code review: `ground` is `plan-grounding`, `write` `plan-writer` and
+`review` `plan-review` (the operator, 2026-11-20). The first run seeds `ground`, "Plan ·
+ground", `done`, for the grounding the stage's session ran before the loop, then `write`, "Plan ·
+write", and `review`, "Plan · review", both `pending`; a reset re-plan, which enters at review,
+seeds `ground` and `review`. Each writer pass is a step, `write`, then `write-2` and on, "Plan ·
+write 2", and so is each review. A questions or review exit leaves its step active, its clock
+banked, and the rerun's pass is a step of its own after it, which marks it done with the time it
+ran. Exit 0 marks the active step done. A rerun keeps the list it finds. A pass past the first
+carries its why, as a run's repeat round does ([run-loop.md](run-loop.md) § The steps Pilot
+shows): after the writer's questions, "Follows the operator's answers to the writer's
+questions"; after a review, the headlines of its findings that came to the fix pass, joined by
+`;`; after a stop, "Resumed after the loop stopped: " and its reason. `plan_state.json` keeps it
+in `why_next` until the pass's step takes it off.
+
+**The launch's list.** `run … --detach` publishes the loop's list before it hands back, so that
+a pass the loop starts after the launch stood on the work item's first list: a fresh launch the
+seeded list with every step not done `pending`, whatever the loop has started meanwhile, the
+grounding staying `done`; a rerun the list as it stood before the loop was spawned, a pass a stop
+left active still active. A publication that fails is a `[launch]` line in `plan_log.txt` and
+never fails the launch.
+
+**The pass in flight.** From a pass's dispatch to its ruling, `plan_state.json`'s `in_flight`
+holds it, as the run loop's does: its role, round, verdict file, when it began, what it runs on
+and its kind, and its `session` from the moment the loop learns it, saved at once with the
+session added to the active step. A pass is never reattached, so `in_flight` goes with the pass
+however it ends; the row names the session from then on.
+
+**The grounding's steps.** Before the loop exists, the plan-slice session publishes the
+grounding itself: `plan_loop.py progress <slice> --ground pending|active|done`, `pending` in a
+call of its own before `active`, so that the grounding stands listed before it starts, and
+`done` once the preparer has returned. Each sends `ground` in the state given and `write` and
+`review` `pending`. `active` notes its start in the slice's run records, `grounding.json`
+([runner-state.md](runner-state.md) § The run records), outside the spec repo so that the slice
+folder stays clean; `done` sends the whole seconds from it as the grounding's duration, none
+where no start is known, and clears it, as `pending` clears one an earlier grounding left. The
+grounding names no conversation: the preparer runs in the stage's own session. `progress` reads
+and writes no `plan_state.json`, takes no lock, prints nothing and exits 0 whatever Pilot
+answered, what could not be published in `plan_log.txt`.
 
 **The debrief.** The plan-writer and the plan-reviewer are asked at their hand-back for a debrief,
 as the run's roles are, and the loop keeps each pass's in `plan_debrief.json` beside
