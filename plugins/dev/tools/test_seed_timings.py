@@ -44,9 +44,10 @@ def row(role, ts, dur, phase=None, round_=1, **more):
 
 
 # Slice 001: two phases it began with, one appended (`appended_phases`); a
-# gate-fix round, a review consult, the merge's re-gate, two sweeps, a sweep's
-# test-fixer, three consult rows (a session-limit wait among them), two test
-# rounds, the doc phase, the wrap-up with its gates and the fixes pass.
+# gate-fix round, a review consult, the merge's re-gate, two sweeps, a flake's
+# test-fixer after the consult that answered it, three consult rows (a
+# session-limit wait among them), two test rounds, the doc phase, the wrap-up
+# with its gates and the fixes pass.
 ALPHA_RUN = {
     "slice": "001_alpha", "appended_phases": ["3"],
     "fixes": {"started_at": "2026-10-05T09:00:00+02:00"},
@@ -64,8 +65,8 @@ ALPHA_RUN = {
         row("gate", "11009", 0, "2", outcome="nothing_ran"),
         row("code-reviewer", "11010", 40, "2", outcome="signoff"),
         row("sweep", "21000", 60, outcome="red"),
-        row("test-fixer", "21001", 15),
-        row("consult", "21002", 12, None, 2, outcome="appended"),
+        row("consult", "21001", 12, None, 2, outcome="flake"),
+        row("test-fixer", "21002", 15),
         row("code-writer", "21003", 70, "3"),
         row("gate", "21004", 5, "3", outcome="green"),
         row("code-reviewer", "21005", 25, "3", outcome="signoff"),
@@ -258,8 +259,8 @@ def test_the_duration_is_the_sum_of_the_rounds_rows_gates_and_fixers_folded():
     assert d("run", "P1.code-2") == 50 + 10
     assert d("run", "P1.review") == 30 + 7 + 3      # its consult, the re-gate
     assert d("run", "P3.code") == 70 + 5
-    assert d("run", "sweep") == 60 + 15             # the sweep's test-fixer
-    assert d("run", "consult") == 12
+    assert d("run", "sweep") == 60                  # its own run alone
+    assert d("run", "consult") == 12 + 15           # its flake's test-fixer
     assert d("run", "consult-2") == 4 + 9           # a session-limit wait
     assert d("run", "test-2") == 100
     assert d("run", "docs") == 200

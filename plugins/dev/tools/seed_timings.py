@@ -40,8 +40,9 @@ What a timing is, by the rulings it follows (t24, AIWF-196):
 - The rows a round's step covers fold into it, as the active step covers them
   live: a phase's gate rows and its gate test-fixer into the code or review
   step it ran under (the merge's re-gate into the review), a consult with a
-  phase into its review (debrief.py), a sweep's test-fixer into the sweep, the
-  doc gate and the wrap-up's gates into `wrap-up` (into `docs` on a run from
+  phase into its review (debrief.py), a flake's test-fixer into the
+  completion consult whose `flake` dispatched it (run-loop.md § The steps
+  Pilot shows), the doc gate and the wrap-up's gates into `wrap-up` (into `docs` on a run from
   before the wrap-up), the fixes pass's rows into `fixes`.
 - `kind` from the one map (D1, pilot_progress `kind_of`), the plan's review
   apart from the run's.
@@ -205,7 +206,7 @@ def run_steps(state: dict) -> dict[str, dict]:
     out = _Steps()
     current: dict[str, str] = {}      # phase -> the step it last started
     last_review: dict[str, str] = {}  # phase -> its last review step
-    last_sweep: str | None = None
+    check: str | None = None          # the completion check's last step
     completions = 0
     wrapped = False
 
@@ -236,17 +237,22 @@ def run_steps(state: dict) -> dict[str, dict]:
                 code = last_review.get(phase) or step_code("review", 1, phase)
             out.add(code, row, phase_ahead(phase, split_code(code)[2]))
         elif role == "sweep":
-            last_sweep = step_code("sweep", round_)
-            out.add(last_sweep, row, round_ == 1)
+            check = step_code("sweep", round_)
+            out.add(check, row, round_ == 1)
         elif role == "test-fixer":
-            code = last_sweep or step_code("sweep")
+            # A flake's fixer runs after the consult's answer, inside its
+            # step; a sweep spawns no session of its own.
+            code = check if check is not None \
+                and split_code(check)[1] == "consult" else step_code(
+                    "consult", max(completions, 1))
             out.add(code, row, split_code(code)[2] == 1)
         elif role == "consult":
             # A session-limit wait is no answer: the redispatch keeps the step.
             n = completions + 1
             if row.get("outcome") != "session_limit":
                 completions = n
-            out.add(step_code("consult", n), row, n == 1)
+            check = step_code("consult", n)
+            out.add(check, row, n == 1)
         elif role == "test-agent":
             out.add(step_code("test", round_), row, round_ == 1)
         elif role == "doc-writer":
